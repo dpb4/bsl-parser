@@ -1,10 +1,24 @@
+use std::collections::HashMap;
+
+use crate::Expression;
+
+#[derive(Debug, Clone)]
+pub struct Lambda(pub (Vec<String>, Box<super::Expression>));
+
 #[derive(Debug, Clone)]
 pub enum Primitive {
     Natural(u32),
     Integer(i32),
     Number(f32),
     String(String),
+    List(ConsList),
+    Lambda(Lambda),
+}
+
+#[derive(Debug, Clone)]
+pub enum ConsList {
     Empty,
+    Cons((Box<Primitive>, Box<ConsList>)),
 }
 
 impl Primitive {
@@ -83,7 +97,7 @@ impl Primitive {
 
     pub fn try_from_str(input: &str) -> Result<Self, &str> {
         if input == "empty" {
-            return Ok(Self::Empty);
+            return Ok(Self::List(ConsList::Empty));
         }
 
         if input.starts_with("\"") && input.ends_with("\"")
@@ -105,6 +119,21 @@ impl Primitive {
     }
 }
 
+impl ConsList {
+    fn to_string(&self) -> String {
+        match self {
+            ConsList::Empty => String::from("empty"),
+            ConsList::Cons((e, r)) => format!("(cons {} {})", *e, r.to_string()),
+        }
+    }
+}
+
+impl std::fmt::Display for ConsList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_string())
+    }
+}
+
 impl std::fmt::Display for Primitive {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -115,7 +144,8 @@ impl std::fmt::Display for Primitive {
                 Self::Integer(i) => format!("Integer: {i}"),
                 Self::Number(x) => format!("Number: {x}"),
                 Self::String(s) => format!("String: {s}"),
-                Self::Empty => "Empty".to_string(),
+                Self::List(cl) => cl.to_string(),
+                Primitive::Lambda(_) => todo!(),
             }
         )
     }
@@ -134,15 +164,15 @@ pub struct EvalErr {
     col_num: u32,
 }
 
-fn add(a: Primitive, b: Primitive) -> Result<Primitive, EvalErr> {
-    if matches!(a, Primitive::String(_) | Primitive::Empty) {
+fn add(a: &Primitive, b: &Primitive) -> Result<Primitive, EvalErr> {
+    if matches!(a, Primitive::String(_) | Primitive::List(_)) {
         return Err(EvalErr {
             err_type: EvalErrType::TypeMismatch(a.clone()),
             msg: format!("(+) expected a Natural or Integer or Number, found {b}"),
             line_num: 0,
             col_num: 0,
         });
-    } else if matches!(b, Primitive::String(_) | Primitive::Empty) {
+    } else if matches!(b, Primitive::String(_) | Primitive::List(_)) {
         return Err(EvalErr {
             err_type: EvalErrType::TypeMismatch(b.clone()),
             msg: format!("(+) expected a Natural or Integer or Number, found {b}"),

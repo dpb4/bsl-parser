@@ -2,6 +2,17 @@ pub type ParseResult<'a, Output> = Result<(&'a str, Output), &'a str>;
 
 pub trait Parser<'a, Output> {
     fn parse(&self, input: &'a str) -> ParseResult<'a, Output>;
+
+    // fn map<'a, P, F, B>(&self, map_fn: F) -> impl Parser<'a, B>
+    // where
+    //     P: Parser<'a, A>,
+    //     F: Fn(Output) -> B,
+    // {
+    //     move |input| {
+    //         self.parse(input)
+    //             .map(|(next_input, result)| (next_input, map_fn(result)))
+    //     }
+    // }
 }
 
 impl<'a, F, Output> Parser<'a, Output> for F
@@ -50,6 +61,7 @@ pub mod com {
             })
         }
     }
+
     pub fn map<'a, P, F, A, B>(parser: P, map_fn: F) -> impl Parser<'a, B>
     where
         P: Parser<'a, A>,
@@ -59,6 +71,18 @@ pub mod com {
             parser
                 .parse(input)
                 .map(|(next_input, result)| (next_input, map_fn(result)))
+        }
+    }
+
+    pub fn and_then<'a, P, F, A, B>(parser: P, map_fn: F) -> impl Parser<'a, B>
+    where
+        P: Parser<'a, A>,
+        F: Fn(A) -> Result<B, &'a str>,
+    {
+        move |input| {
+            parser
+                .parse(input)
+                .and_then(|(next_input, val)| map_fn(val).map(|val2| (next_input, val2)))
         }
     }
     pub fn left<'a, P1, P2, R1, R2>(parser1: P1, parser2: P2) -> impl Parser<'a, R1>
@@ -76,6 +100,17 @@ pub mod com {
     {
         map(pair(parser1, parser2), |(_, right)| right)
     }
+
+    pub fn or<'a, P1, P2, R>(parser1: P1, parser2: P2) -> impl Parser<'a, R>
+    where
+        P1: Parser<'a, R>,
+        P2: Parser<'a, R>,
+    {
+        move |input| match parser1.parse(input) {
+            r @ Ok(_) => r,
+            Err(_) => parser2.parse(input),
+        }
+    }
 }
 pub mod par {
     use crate::closes;
@@ -90,19 +125,20 @@ pub mod par {
     pub fn identity<'a>() -> impl Parser<'a, ()> {
         move |input| Ok((input, ()))
     }
-    pub fn match_literal<'a>(expected: &'static str) -> impl Parser<'a, ()> {
+
+    pub fn match_exact<'a>(expected: &'static str) -> impl Parser<'a, &'static str> {
         move |input: &'a str| {
             if let Some(stripped) = input.strip_prefix(expected) {
-                Ok((stripped, ()))
+                Ok((stripped, expected))
             } else {
                 Err(input)
             }
         }
     }
-    pub fn match_literal_end<'a>(expected: &'static str) -> impl Parser<'a, ()> {
+    pub fn match_exact_end<'a>(expected: &'static str) -> impl Parser<'a, &'static str> {
         move |input: &'a str| {
             if let Some(stripped) = input.strip_suffix(expected) {
-                Ok((stripped, ()))
+                Ok((stripped, expected))
             } else {
                 Err(input)
             }
@@ -130,8 +166,25 @@ pub mod par {
     where
         P: Parser<'a, A>,
     {
-        right(pair(match_literal("("), match_literal_end(")")), parser)
+        // right(pair(match_exact("("), match_exact_end(")")), parser)
+        left(right(match_exact("("), parser), match_exact(")"))
     }
+
+    pub fn lazy<'a, P, A>(parser: P) -> impl Parser<'a, A>
+    where
+        P: Parser<'a, A>,
+    {
+        move |s| parser.parse(s)
+    }
+
+    pub fn bracket<'a, P, A>(parser: P) -> impl Parser<'a, A>
+    where
+        P: Parser<'a, A>,
+    {
+        left(right(match_exact("["), parser), match_exact("]"))
+        // right(pair(match_exact("["), match_exact_end("]")), parser)
+    }
+
     pub fn one_plus<'a, P, A>(parser: P) -> impl Parser<'a, Vec<A>>
     where
         P: Parser<'a, A>,
@@ -171,6 +224,35 @@ pub mod par {
         }
     }
 
+    pub fn parse_a_until_b<'a, P1, P2, R1, R2>(
+        multiple: P1,
+        last: P2,
+    ) -> impl Parser<'a, (Vec<R1>, R2)>
+    where
+        P1: Parser<'a, R1>,
+        P2: Parser<'a, R2>,
+    {
+        move |input| {
+            let mut result_vec = vec![];
+            let mut remaining = input;
+
+            loop {
+                match last.parse(remaining) {
+                    Ok((r, v)) => {
+                        return Ok((r, (result_vec, v)));
+                    }
+                    Err(_) => match multiple.parse(remaining) {
+                        Ok((r, v)) => {
+                            result_vec.push(v);
+                            remaining = r;
+                        }
+                        Err(e) => return Err(e),
+                    },
+                }
+            }
+        }
+    }
+
     pub fn parse_simple_word<'a>(input: &'a str) -> ParseResult<'a, &'a str> {
         let mut matched = 0;
         let mut chars = input.chars();
@@ -185,8 +267,8 @@ pub mod par {
         };
 
         for next in chars {
-            // if next.is_alphanumeric() || next == '-' || next == '_' {
-            if !next.is_whitespace() {
+            if next.is_alphanumeric() || next == '-' || next == '_' {
+                // if !next.is_whitespace() {
                 matched += 1;
             } else {
                 break;
@@ -223,7 +305,7 @@ pub mod par {
         Ok((&input[matched..], &input[..matched]))
     }
 
-    pub fn parse_any_char(input: &str) -> ParseResult<char> {
+    pub fn parse_any_char(input: &str) -> ParseResult<'_, char> {
         match input.chars().next() {
             Some(next) => Ok((&input[next.len_utf8()..], next)),
             _ => Err(input),
@@ -234,6 +316,21 @@ pub mod par {
         zero_plus(whitespace_char())
     }
 
+    pub fn maybe_space_then<'a, P, A>(parser: P) -> impl Parser<'a, A>
+    where
+        P: Parser<'a, A>,
+    {
+        right(optional_space(), parser)
+    }
+
+    pub fn space_separated<'a, P, A>(parser: P) -> impl Parser<'a, Vec<A>>
+    where
+        P: Parser<'a, A>,
+    {
+        one_plus(left(parser, optional_space()))
+    }
+
+    // TODO should token consider spaces? probably not
     pub fn token<'a>() -> impl Parser<'a, &'a str> {
         right(
             optional_space(),
@@ -243,7 +340,7 @@ pub mod par {
         )
     }
 
-    pub fn word<'a>() -> impl Parser<'a, &'a str> {
+    pub fn blob<'a>() -> impl Parser<'a, &'a str> {
         right(
             optional_space(),
             BoxedParser::new(move |input: &'a str| -> ParseResult<'a, &'a str> {
