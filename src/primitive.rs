@@ -7,6 +7,7 @@ pub struct Lambda(pub (Vec<String>, Box<super::Expression>));
 
 #[derive(Debug, Clone)]
 pub enum Primitive {
+    Boolean(bool),
     Natural(u32),
     Integer(i32),
     Number(f32),
@@ -140,6 +141,7 @@ impl std::fmt::Display for Primitive {
             f,
             "{}",
             match &self {
+                Self::Boolean(b) => format!("Boolean: {b}"),
                 Self::Natural(n) => format!("Natural: {n}"),
                 Self::Integer(i) => format!("Integer: {i}"),
                 Self::Number(x) => format!("Number: {x}"),

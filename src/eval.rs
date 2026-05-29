@@ -4,6 +4,25 @@ use crate::{
     primitive::{Lambda, Primitive},
     Expression, Keyword,
 };
+macro_rules! unpack_args {
+    ($vec:expr => $($name:ident),+ $(,)?) => {
+        let mut __iter = $vec.into_iter();
+        $(
+            let $name = __iter.next().unwrap();
+        )+
+    };
+}
+macro_rules! check_arg_len {
+    ($exprs:expr, $name:expr, $count:expr) => {
+        if $exprs.len() != $count {
+            return Err(format!(
+                "`{n}` expects $count arguments, given {e}",
+                n = $name,
+                e = $exprs.len()
+            ));
+        }
+    };
+}
 
 pub struct EvalEnv {
     parent: Option<Rc<EvalEnv>>,
@@ -52,29 +71,32 @@ pub fn eval_expression_with_env(expr: Expression, env: Rc<EvalEnv>) -> Result<Pr
     match expr {
         Expression::Literal(primitive) => Ok(primitive),
         Expression::Token(t) => env.get(&t),
-        Expression::FunctionCall((name, exprs)) => match name {
-            crate::FunctionName::BuiltIn(keyword) => match keyword {
-                Keyword::If => todo!(),
-                _ => todo!(),
-            },
-            crate::FunctionName::Custom(name) => {
-                let args: Vec<Primitive> = exprs
-                    .into_iter()
-                    .map(|e| eval_expression_with_env(e, env.clone()))
-                    .collect::<Result<Vec<Primitive>, String>>()?;
-                let lambda = match env.get(&name)? {
-                    Primitive::Lambda(lambda) => Ok(lambda),
-                    _ => Err("not a lambda"),
-                }?;
+        Expression::FunctionCall((name, exprs)) => {
+            use Keyword as K;
+            match name {
+                crate::FunctionName::BuiltIn(keyword) => match keyword {
+                    K::If | K::And | K::Or => {}
+                    _ => todo!(),
+                },
+                crate::FunctionName::Custom(name) => {
+                    let args: Vec<Primitive> = exprs
+                        .into_iter()
+                        .map(|e| eval_expression_with_env(e, env.clone()))
+                        .collect::<Result<Vec<Primitive>, String>>()?;
+                    let lambda = match env.get(&name)? {
+                        Primitive::Lambda(lambda) => Ok(lambda),
+                        _ => Err("not a lambda"),
+                    }?;
 
-                let (arg_map, body) = apply_lambda(lambda, args)?;
-                let inner_env = EvalEnv {
-                    parent: Some(env),
-                    entries: arg_map,
-                };
-                eval_expression_with_env(body, Rc::new(inner_env))
+                    let (arg_map, body) = apply_lambda(lambda, args)?;
+                    let inner_env = EvalEnv {
+                        parent: Some(env),
+                        entries: arg_map,
+                    };
+                    eval_expression_with_env(body, Rc::new(inner_env))
+                }
             }
-        },
+        }
         Expression::Cond(_) => todo!(),
     }
 }
@@ -91,4 +113,34 @@ fn apply_lambda(
 
     let arg_map: HashMap<_, _> = params.into_iter().zip(args.into_iter()).collect();
     Ok((arg_map, *body))
+}
+
+mod builtin {
+    use super::*;
+
+    fn _if(exprs: Vec<Expression>, env: Rc<EvalEnv>) -> Result<Primitive, String> {
+        check_arg_len!(exprs, "if", 3);
+
+        unpack_args!(exprs => bool_expr, true_answer, false_answer);
+
+        match eval_expression_with_env(bool_expr, env.clone()) {
+            Ok(Primitive::Boolean(m)) => {
+                if m {
+                    eval_expression_with_env(true_answer, env)
+                } else {
+                    eval_expression_with_env(false_answer, env)
+                }
+            }
+            Ok(p) => Err(format!(
+                "first argument to `if` must be a Boolean (given {p})"
+            )),
+            Err(e) => Err(e),
+        }
+    }
+
+    fn or(exprs: Vec<Expression>, env: Rc<EvalEnv>) -> Result<Primitive, String> {
+        check_arg_len!(exprs, "or", 2);
+        unpack_args!(exprs => bool_a, bool_b);
+        todo!()
+    }
 }
