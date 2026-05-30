@@ -1,7 +1,7 @@
 use std::{collections::HashMap, rc::Rc};
 
 use crate::{
-    primitive::{Lambda, Primitive},
+    primitive::{self, Lambda, Primitive},
     Expression, Keyword,
 };
 macro_rules! unpack_args {
@@ -74,10 +74,146 @@ pub fn eval_expression_with_env(expr: Expression, env: Rc<EvalEnv>) -> Result<Pr
         Expression::FunctionCall((name, exprs)) => {
             use Keyword as K;
             match name {
-                crate::FunctionName::BuiltIn(keyword) => match keyword {
-                    K::If | K::And | K::Or => {}
-                    _ => todo!(),
-                },
+                crate::FunctionName::BuiltIn(keyword) => {
+                    match keyword {
+                        K::If => {
+                            check_arg_len!(exprs, "if", 3);
+                            unpack_args!(exprs => bool_expr, true_answer, false_answer);
+                            match eval_expression_with_env(bool_expr, env.clone()) {
+                                Ok(Primitive::Boolean(m)) => {
+                                    if m {
+                                        eval_expression_with_env(true_answer, env)
+                                    } else {
+                                        eval_expression_with_env(false_answer, env)
+                                    }
+                                }
+                                Ok(p) => Err(format!(
+                                    "first argument to `if` must be a Boolean (given {p})"
+                                )),
+                                Err(e) => Err(e),
+                            }
+                        }
+                        K::And => {
+                            check_arg_len!(exprs, "and", 2);
+                            unpack_args!(exprs => bool_a, bool_b);
+
+                            match eval_expression_with_env(bool_a, env.clone()) {
+                                Ok(Primitive::Boolean(m)) => {
+                                    if !m {
+                                        Ok(Primitive::Boolean(false))
+                                    } else {
+                                        match eval_expression_with_env(bool_b, env) {
+                                        b @ Ok(Primitive::Boolean(_)) => b,
+                                        Ok(p) => Err(format!("second argument to `and` must be a Boolean (given {p})")),
+                                        e @ _ => e,
+                                    }
+                                    }
+                                }
+                                Ok(p) => Err(format!(
+                                    "first argument to `and` must be a Boolean (given {p})"
+                                )),
+                                e @ _ => e,
+                            }
+                        }
+                        K::Or => {
+                            check_arg_len!(exprs, "or", 2);
+                            unpack_args!(exprs => bool_a, bool_b);
+
+                            match eval_expression_with_env(bool_a, env.clone()) {
+                                Ok(Primitive::Boolean(m)) => {
+                                    if m {
+                                        Ok(Primitive::Boolean(true))
+                                    } else {
+                                        match eval_expression_with_env(bool_b, env) {
+                                        b @ Ok(Primitive::Boolean(_)) => b,
+                                        Ok(p) => Err(format!("second argument to `or` must be a Boolean (given {p})")),
+                                        e @ _ => e,
+                                    }
+                                    }
+                                }
+                                Ok(p) => Err(format!(
+                                    "first argument to `or` must be a Boolean (given {p})"
+                                )),
+                                e @ _ => e,
+                            }
+                        }
+                        K::Plus => {
+                            check_arg_len!(exprs, "(+)", 2);
+                            let x = exprs
+                                .into_iter()
+                                .map(|e| eval_expression_with_env(e, env.clone()));
+                            unpack_args!(x => a, b);
+
+                            primitive::add(a?, b?)
+                        }
+                        K::Minus => {
+                            check_arg_len!(exprs, "(-)", 2);
+                            let x = exprs
+                                .into_iter()
+                                .map(|e| eval_expression_with_env(e, env.clone()));
+                            unpack_args!(x => a, b);
+
+                            primitive::sub(a?, b?)
+                        }
+                        K::Times => {
+                            check_arg_len!(exprs, "(*)", 2);
+                            let x = exprs
+                                .into_iter()
+                                .map(|e| eval_expression_with_env(e, env.clone()));
+                            unpack_args!(x => a, b);
+
+                            primitive::mult(a?, b?)
+                        }
+
+                        K::Divide => {
+                            check_arg_len!(exprs, "(/)", 2);
+                            let x = exprs
+                                .into_iter()
+                                .map(|e| eval_expression_with_env(e, env.clone()));
+                            unpack_args!(x => a, b);
+
+                            primitive::divide(a?, b?)
+                        }
+                        K::Not => {
+                            check_arg_len!(exprs, "not", 1);
+                            let x = exprs
+                                .into_iter()
+                                .map(|e| eval_expression_with_env(e, env.clone()));
+                            unpack_args!(x => a);
+
+                            primitive::not(a?)
+                        }
+                        K::Cons => {
+                            check_arg_len!(exprs, "cons", 2);
+                            let x = exprs
+                                .into_iter()
+                                .map(|e| eval_expression_with_env(e, env.clone()));
+                            unpack_args!(x => a, b);
+
+                            primitive::cons(a?, b?)
+                        }
+                        K::First => {
+                            check_arg_len!(exprs, "first", 1);
+                            let x = exprs
+                                .into_iter()
+                                .map(|e| eval_expression_with_env(e, env.clone()));
+                            unpack_args!(x => a);
+
+                            primitive::first(a?)
+                        }
+                        K::Rest => {
+                            check_arg_len!(exprs, "rest", 1);
+                            let x = exprs
+                                .into_iter()
+                                .map(|e| eval_expression_with_env(e, env.clone()));
+                            unpack_args!(x => a);
+
+                            primitive::rest(a?)
+                        }
+
+                        _ => todo!(),
+                    }
+                }
                 crate::FunctionName::Custom(name) => {
                     let args: Vec<Primitive> = exprs
                         .into_iter()

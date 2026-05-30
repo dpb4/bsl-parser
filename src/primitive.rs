@@ -23,20 +23,15 @@ pub enum ConsList {
 }
 
 impl Primitive {
-    pub fn coerce_f32(&self) -> Result<f32, EvalErr> {
+    pub fn coerce_f32(&self) -> Result<f32, String> {
         match *self {
             Primitive::Natural(n) => Ok(n as f32),
             Primitive::Integer(n) => Ok(n as f32),
             Primitive::Number(n) => Ok(n),
-            _ => Err(EvalErr {
-                err_type: EvalErrType::TypeCoercion(self.clone()),
-                msg: format!("Unable to coerce value {self} to type f32"),
-                line_num: 0,
-                col_num: 0,
-            }),
+            _ => Err(format!("Unable to coerce value {self} to type f32")),
         }
     }
-    pub fn coerce_i32(&self) -> Result<i32, EvalErr> {
+    pub fn coerce_i32(&self) -> Result<i32, String> {
         match *self {
             Primitive::Natural(n) => Ok(n as i32),
             Primitive::Integer(n) => Ok(n),
@@ -44,61 +39,47 @@ impl Primitive {
                 if n - n.round() == 0.0 {
                     Ok(n as i32)
                 } else {
-                    Err(EvalErr {
-                        err_type: EvalErrType::TypeCoercion(self.clone()),
-                        msg: format!("Unable to coerce value {self} to type i32"),
-                        line_num: 0,
-                        col_num: 0,
-                    })
+                    Err(format!("Unable to coerce value {self} to type i32"))
                 }
             }
-            _ => Err(EvalErr {
-                err_type: EvalErrType::TypeCoercion(self.clone()),
-                msg: format!("Unable to coerce value {self} to type i32"),
-                line_num: 0,
-                col_num: 0,
-            }),
+            _ => Err(format!("Unable to coerce value {self} to type i32")),
         }
     }
-    pub fn coerce_u32(&self) -> Result<u32, EvalErr> {
+    pub fn coerce_u32(&self) -> Result<u32, String> {
         match *self {
             Primitive::Natural(n) => Ok(n),
             Primitive::Integer(n) => {
                 if n >= 0 {
                     Ok(n as u32)
                 } else {
-                    Err(EvalErr {
-                        err_type: EvalErrType::TypeCoercion(self.clone()),
-                        msg: format!("Unable to coerce value {self} to type u32"),
-                        line_num: 0,
-                        col_num: 0,
-                    })
+                    Err(format!("Unable to coerce value {self} to type u32"))
                 }
             }
             Primitive::Number(n) => {
                 if n - n.round() == 0.0 {
                     Ok(n as u32)
                 } else {
-                    Err(EvalErr {
-                        err_type: EvalErrType::TypeCoercion(self.clone()),
-                        msg: format!("Unable to coerce value {self} to type u32"),
-                        line_num: 0,
-                        col_num: 0,
-                    })
+                    Err(format!("Unable to coerce value {self} to type u32"))
                 }
             }
-            _ => Err(EvalErr {
-                err_type: EvalErrType::TypeCoercion(self.clone()),
-                msg: format!("Unable to coerce value {self} to type u32"),
-                line_num: 0,
-                col_num: 0,
-            }),
+            _ => Err(format!("Unable to coerce value {self} to type u32")),
+        }
+    }
+
+    pub fn is_numeric(&self) -> bool {
+        match self {
+            Primitive::Natural(_) | Primitive::Integer(_) | Primitive::Number(_) => true,
+            _ => false,
         }
     }
 
     pub fn try_from_str(input: &str) -> Result<Self, &str> {
         if input == "empty" {
             return Ok(Self::List(ConsList::Empty));
+        } else if input == "true" {
+            return Ok(Self::Boolean(true));
+        } else if input == "false" {
+            return Ok(Self::Boolean(false));
         }
 
         if input.starts_with("\"") && input.ends_with("\"")
@@ -166,21 +147,15 @@ pub struct EvalErr {
     col_num: u32,
 }
 
-fn add(a: &Primitive, b: &Primitive) -> Result<Primitive, EvalErr> {
-    if matches!(a, Primitive::String(_) | Primitive::List(_)) {
-        return Err(EvalErr {
-            err_type: EvalErrType::TypeMismatch(a.clone()),
-            msg: format!("(+) expected a Natural or Integer or Number, found {b}"),
-            line_num: 0,
-            col_num: 0,
-        });
-    } else if matches!(b, Primitive::String(_) | Primitive::List(_)) {
-        return Err(EvalErr {
-            err_type: EvalErrType::TypeMismatch(b.clone()),
-            msg: format!("(+) expected a Natural or Integer or Number, found {b}"),
-            line_num: 0,
-            col_num: 0,
-        });
+pub fn add(a: Primitive, b: Primitive) -> Result<Primitive, String> {
+    if !a.is_numeric() {
+        return Err(format!(
+            "(+) expected a Natural or Integer or Number, found {a}"
+        ));
+    } else if !b.is_numeric() {
+        return Err(format!(
+            "(+) expected a Natural or Integer or Number, found {b}"
+        ));
     }
 
     if matches!(a, Primitive::Number(_)) || matches!(b, Primitive::Number(_)) {
@@ -189,5 +164,109 @@ fn add(a: &Primitive, b: &Primitive) -> Result<Primitive, EvalErr> {
         Ok(Primitive::Integer(a.coerce_i32()? + b.coerce_i32()?))
     } else {
         Ok(Primitive::Natural(a.coerce_u32()? + b.coerce_u32()?))
+    }
+}
+
+pub fn sub(a: Primitive, b: Primitive) -> Result<Primitive, String> {
+    if !a.is_numeric() {
+        return Err(format!(
+            "(-) expected a Natural or Integer or Number, found {a}"
+        ));
+    } else if !b.is_numeric() {
+        return Err(format!(
+            "(-) expected a Natural or Integer or Number, found {b}"
+        ));
+    }
+
+    // TODO what should happen when Naturals underflow?
+    if matches!(a, Primitive::Number(_)) || matches!(b, Primitive::Number(_)) {
+        Ok(Primitive::Number(a.coerce_f32()? - b.coerce_f32()?))
+    } else if matches!(a, Primitive::Integer(_)) || matches!(b, Primitive::Integer(_)) {
+        Ok(Primitive::Integer(a.coerce_i32()? - b.coerce_i32()?))
+    } else {
+        Ok(Primitive::Natural(a.coerce_u32()? - b.coerce_u32()?))
+    }
+}
+
+pub fn mult(a: Primitive, b: Primitive) -> Result<Primitive, String> {
+    if !a.is_numeric() {
+        return Err(format!(
+            "(*) expected a Natural or Integer or Number, found {a}"
+        ));
+    } else if !b.is_numeric() {
+        return Err(format!(
+            "(*) expected a Natural or Integer or Number, found {b}"
+        ));
+    }
+
+    // TODO what should happen when Naturals underflow?
+    if matches!(a, Primitive::Number(_)) || matches!(b, Primitive::Number(_)) {
+        Ok(Primitive::Number(a.coerce_f32()? * b.coerce_f32()?))
+    } else if matches!(a, Primitive::Integer(_)) || matches!(b, Primitive::Integer(_)) {
+        Ok(Primitive::Integer(a.coerce_i32()? * b.coerce_i32()?))
+    } else {
+        Ok(Primitive::Natural(a.coerce_u32()? * b.coerce_u32()?))
+    }
+}
+
+pub fn divide(a: Primitive, b: Primitive) -> Result<Primitive, String> {
+    if !a.is_numeric() {
+        return Err(format!(
+            "(/) expected a Natural or Integer or Number, found {a}"
+        ));
+    } else if !b.is_numeric() {
+        return Err(format!(
+            "(/) expected a Natural or Integer or Number, found {b}"
+        ));
+    }
+
+    if matches!(a, Primitive::Number(_)) || matches!(b, Primitive::Number(_)) {
+        Ok(Primitive::Number(a.coerce_f32()? / b.coerce_f32()?))
+    } else if matches!(a, Primitive::Integer(_)) || matches!(b, Primitive::Integer(_)) {
+        Ok(Primitive::Integer(a.coerce_i32()? / b.coerce_i32()?))
+    } else {
+        Ok(Primitive::Natural(a.coerce_u32()? / b.coerce_u32()?))
+    }
+}
+
+pub fn and(a: Primitive, b: Primitive) -> Result<Primitive, String> {
+    match (&a, b) {
+        (Primitive::Boolean(a), Primitive::Boolean(b)) => Ok(Primitive::Boolean(*a && b)),
+        _ => Err(format!("`and` expected a Boolean, found {a}")),
+    }
+}
+
+pub fn or(a: Primitive, b: Primitive) -> Result<Primitive, String> {
+    match (&a, b) {
+        (Primitive::Boolean(a), Primitive::Boolean(b)) => Ok(Primitive::Boolean(*a || b)),
+        _ => Err(format!("`or` expected a Boolean, found {a}")),
+    }
+}
+
+pub fn not(a: Primitive) -> Result<Primitive, String> {
+    match a {
+        Primitive::Boolean(a) => Ok(Primitive::Boolean(!a)),
+        _ => Err(format!("`not` expected a Boolean, found {a}")),
+    }
+}
+
+pub fn cons(e: Primitive, r: Primitive) -> Result<Primitive, String> {
+    match r {
+        Primitive::List(cl) => Ok(Primitive::List(ConsList::Cons((Box::new(e), Box::new(cl))))),
+        _ => Err(todo!()),
+    }
+}
+
+pub fn rest(l: Primitive) -> Result<Primitive, String> {
+    match l {
+        Primitive::List(ConsList::Cons((_, r))) => Ok(Primitive::List(*r)),
+        _ => Err(todo!()),
+    }
+}
+
+pub fn first(l: Primitive) -> Result<Primitive, String> {
+    match l {
+        Primitive::List(ConsList::Cons((e, _))) => Ok(*e),
+        _ => Err(todo!()),
     }
 }

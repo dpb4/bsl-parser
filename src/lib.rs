@@ -5,6 +5,8 @@ pub mod primitive;
 use parse::*;
 use primitive::*;
 
+use crate::eval::eval_expression;
+
 macro_rules! chain_or {
     ($a:expr) => {
         $a
@@ -107,6 +109,7 @@ pub enum Keyword {
     Divide,
     And,
     Or,
+    Not,
     List,
     Cons,
     CheckExpect,
@@ -122,12 +125,13 @@ impl Keyword {
             "cond" => Some(Self::Cond),
             "local" => Some(Self::Local),
             "=" => Some(Self::Equals),
-            "+" => Some(Self::Plus),
-            "-" => Some(Self::Minus),
-            "*" => Some(Self::Times),
-            "/" => Some(Self::Divide),
+            "+" | "add" => Some(Self::Plus),
+            "-" | "sub" => Some(Self::Minus),
+            "*" | "mult" => Some(Self::Times),
+            "/" | "div" => Some(Self::Divide),
             "and" => Some(Self::And),
             "or" => Some(Self::Or),
+            "not" => Some(Self::Not),
             "list" => Some(Self::List),
             "cons" => Some(Self::Cons),
             "check-expect" => Some(Self::CheckExpect),
@@ -367,15 +371,20 @@ pub fn eval_sequential(se: SequentialExecution) -> Result<(), ()> {
     todo!()
 }
 pub fn testing() {
-    let prog = r#"
-(define myconst 321)
-(define (foo a b c)
-        (cond [(check1 a) a]
-              [(check2 b) b]
-              [else
-                (zoo a c b)]))
-"#;
-    // let u = "(cond [asd qwd] [(foij as) dfwe] [awd qwd dsa] [else 123])";
-    let _ = dbg!(parse_top_level_expression().parse(prog));
-    let _ = dbg!(parse_top_level_expression().parse("\n(define myconst 321)\n"));
+    //     let prog = r#"
+    // (define myconst 321)
+    // (define (foo a b c)
+    //         (cond [(check1 a) a]
+    //               [(check2 b) b]
+    //               [else
+    //                 (zoo a c b)]))
+    // "#;
+    //     // let u = "(cond [asd qwd] [(foij as) dfwe] [awd qwd dsa] [else 123])";
+    //     let _ = dbg!(parse_top_level_expression().parse(prog));
+    //     let _ = dbg!(parse_top_level_expression().parse("\n(define myconst 321)\n"));
+    let parsed = parse_expression()
+        .parse("(if (or true false) 123 \"seoif\")")
+        .unwrap()
+        .1;
+    let _ = dbg!(eval_expression(parsed));
 }
