@@ -1,3 +1,4 @@
+use crate::eval::eval_nv_expression;
 use std::collections::HashMap;
 pub mod eval;
 pub mod parse;
@@ -5,7 +6,7 @@ pub mod primitive;
 use parse::*;
 use primitive::*;
 
-use crate::eval::eval_expression;
+// use crate::eval::eval_nv_expression;
 
 macro_rules! chain_or {
     ($a:expr) => {
@@ -171,17 +172,6 @@ fn closing(c: char) -> char {
     }
 }
 
-// parse the next word or paired token string
-
-// fn parse_expression_multiple(input: &str) -> Result<Vec<Expression>, &str> {
-//     par::zero_plus(par::word())
-//         .parse(input)?
-//         .1
-//         .into_iter()
-//         .map(|s| parse_expression(s))
-//         .collect()
-// }
-
 fn parse_literal<'a>() -> impl Parser<'a, Expression> {
     com::map(
         com::and_then(par::blob(), |b| Primitive::try_from_str(b)),
@@ -194,7 +184,7 @@ fn parse_token<'a>() -> impl Parser<'a, Expression> {
 }
 
 fn parse_fn_name<'a>() -> impl Parser<'a, FunctionName> {
-    com::map(par::token(), |s| {
+    com::map(com::or(par::token(), par::operator()), |s| {
         if let Some(k) = Keyword::get_keyword(s) {
             FunctionName::BuiltIn(k)
         } else {
@@ -277,91 +267,15 @@ fn parse_fn_def<'a>() -> impl Parser<'a, TopLevelExpression> {
     )
 }
 
-fn parse_nv_expression<'a>() -> impl Parser<'a, TopLevelExpression> {
+pub fn parse_nv_expression<'a>() -> impl Parser<'a, TopLevelExpression> {
     com::map(parse_expression(), |e| {
         TopLevelExpression::NonVoidExpression(e)
     })
 }
 
-fn parse_top_level_expression<'a>() -> impl Parser<'a, TopLevelExpression> {
+pub fn parse_top_level_expression<'a>() -> impl Parser<'a, TopLevelExpression> {
     chain_or!(parse_const_def(), parse_fn_def(), parse_nv_expression())
 }
-
-// fn parse_expression(input: &str) -> Result<Expression, &str> {
-//     let p = if is_parend(input) {
-//         // TODO should this be a word or a token?
-//         par::paren(par::word()).parse(input)
-//     } else {
-//         par::word().parse(input)
-//     };
-//     // TODO check for multiple nested parenthesis
-//     match p {
-//         Ok((rest, first)) => {
-//             if rest.is_empty() {
-//                 if let Ok(p) = Primitive::try_from_str(first) {
-//                     Ok(Expression::Immediate(p))
-//                 } else {
-//                     Ok(Expression::Token(first))
-//                 }
-//             } else if let Some(key) = Keyword::get_keyword(first) {
-//                 match key {
-//                     Keyword::Define => {
-//                         let (_, (def, body)) =
-//                             par::maybe_space_then(com::pair(par::word(), par::word()))
-//                                 .parse(rest)?;
-//                         let (_, (name, params)) =
-//                             par::paren(com::pair(par::token(), par::space_separated(par::token())))
-//                                 .parse(def)?;
-//                         Ok(Expression::FunctionDefinition((
-//                             name,
-//                             params,
-//                             Box::new(parse_expression(body)?),
-//                         )))
-//                     }
-//                     Keyword::Cond => {
-//                         let single_case = par::maybe_space_then(par::bracket(com::pair(
-//                             par::word(),
-//                             par::maybe_space_then(par::word()),
-//                         )));
-//                         let else_case = par::maybe_space_then(par::bracket(com::right(
-//                             par::match_exact("else"),
-//                             par::maybe_space_then(par::word()),
-//                         )));
-//                         let (_, (cases, else_case)) =
-//                             dbg!(par::parse_a_until_b(single_case, else_case).parse(rest)?);
-//                         let parsed_cases = cases
-//                             .iter()
-//                             .map(|(p, r)| {
-//                                 parse_expression(*p)
-//                                     .and_then(|e1| parse_expression(*r).and_then(|e2| Ok((e1, e2))))
-//                             })
-//                             .collect::<Result<Vec<_>, _>>()?;
-//                         let else_answer = parse_expression(else_case)?;
-//
-//                         Ok(Expression::Cond((parsed_cases, Box::new(else_answer))))
-//                     }
-//                     Keyword::If => todo!(),
-//                     Keyword::Local => todo!(),
-//                     Keyword::Equals => todo!(),
-//                     Keyword::Plus => todo!(),
-//                     Keyword::Minus => todo!(),
-//                     Keyword::Times => todo!(),
-//                     Keyword::Divide => todo!(),
-//                     Keyword::List => todo!(),
-//                     Keyword::Cons => todo!(),
-//                     Keyword::CheckExpect => todo!(),
-//                     Keyword::First => todo!(),
-//                     Keyword::Rest => todo!(),
-//                 }
-//             } else if let Ok(res) = parse_expression_multiple(rest) {
-//                 Ok(Expression::FunctionCall((FunctionName::Custom(first), res)))
-//             } else {
-//                 dbg!(Err(rest))
-//             }
-//         }
-//         Err(e) => dbg!(Err(e)),
-//     }
-// }
 
 pub enum ParseErrorType {
     ArgumentCount(u8, u8, &'static str),
@@ -386,5 +300,5 @@ pub fn testing() {
         .parse("(if (or true false) 123 \"seoif\")")
         .unwrap()
         .1;
-    let _ = dbg!(eval_expression(parsed));
+    let _ = dbg!(eval_nv_expression(parsed));
 }

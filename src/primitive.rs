@@ -122,13 +122,14 @@ impl std::fmt::Display for Primitive {
             f,
             "{}",
             match &self {
-                Self::Boolean(b) => format!("Boolean: {b}"),
-                Self::Natural(n) => format!("Natural: {n}"),
-                Self::Integer(i) => format!("Integer: {i}"),
-                Self::Number(x) => format!("Number: {x}"),
-                Self::String(s) => format!("String: {s}"),
-                Self::List(cl) => cl.to_string(),
-                Primitive::Lambda(_) => todo!(),
+                Self::Boolean(b) => format!("{b} : Boolean"),
+                Self::Natural(n) => format!("{n} : Natural"),
+                Self::Integer(i) => format!("{i} : Integer"),
+                Self::Number(x) => format!("{x} : Number"),
+                Self::String(s) => format!("{s} : String"),
+                Self::List(cl) => format!("{cl} : List"),
+                Primitive::Lambda(Lambda((args, _))) =>
+                    format!("λ ({}) (...) : Lambda", args.join(" ")),
             }
         )
     }

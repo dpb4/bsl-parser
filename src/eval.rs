@@ -2,7 +2,7 @@ use std::{collections::HashMap, rc::Rc};
 
 use crate::{
     primitive::{self, Lambda, Primitive},
-    Expression, Keyword,
+    Expression, FunctionName, Keyword, TopLevelExpression,
 };
 macro_rules! unpack_args {
     ($vec:expr => $($name:ident),+ $(,)?) => {
@@ -24,6 +24,7 @@ macro_rules! check_arg_len {
     };
 }
 
+#[derive(Debug, Clone)]
 pub struct EvalEnv {
     parent: Option<Rc<EvalEnv>>,
     entries: HashMap<String, Primitive>,
@@ -63,11 +64,14 @@ impl EvalEnv {
     }
 }
 
-pub fn eval_expression(expr: Expression) -> Result<Primitive, String> {
+pub fn eval_nv_expression(expr: Expression) -> Result<Primitive, String> {
     let env = EvalEnv::new();
-    eval_expression_with_env(expr, Rc::new(env))
+    eval_nv_expression_with_env(expr, Rc::new(env))
 }
-pub fn eval_expression_with_env(expr: Expression, env: Rc<EvalEnv>) -> Result<Primitive, String> {
+pub fn eval_nv_expression_with_env(
+    expr: Expression,
+    env: Rc<EvalEnv>,
+) -> Result<Primitive, String> {
     match expr {
         Expression::Literal(primitive) => Ok(primitive),
         Expression::Token(t) => env.get(&t),
@@ -79,12 +83,12 @@ pub fn eval_expression_with_env(expr: Expression, env: Rc<EvalEnv>) -> Result<Pr
                         K::If => {
                             check_arg_len!(exprs, "if", 3);
                             unpack_args!(exprs => bool_expr, true_answer, false_answer);
-                            match eval_expression_with_env(bool_expr, env.clone()) {
+                            match eval_nv_expression_with_env(bool_expr, env.clone()) {
                                 Ok(Primitive::Boolean(m)) => {
                                     if m {
-                                        eval_expression_with_env(true_answer, env)
+                                        eval_nv_expression_with_env(true_answer, env)
                                     } else {
-                                        eval_expression_with_env(false_answer, env)
+                                        eval_nv_expression_with_env(false_answer, env)
                                     }
                                 }
                                 Ok(p) => Err(format!(
@@ -97,12 +101,12 @@ pub fn eval_expression_with_env(expr: Expression, env: Rc<EvalEnv>) -> Result<Pr
                             check_arg_len!(exprs, "and", 2);
                             unpack_args!(exprs => bool_a, bool_b);
 
-                            match eval_expression_with_env(bool_a, env.clone()) {
+                            match eval_nv_expression_with_env(bool_a, env.clone()) {
                                 Ok(Primitive::Boolean(m)) => {
                                     if !m {
                                         Ok(Primitive::Boolean(false))
                                     } else {
-                                        match eval_expression_with_env(bool_b, env) {
+                                        match eval_nv_expression_with_env(bool_b, env) {
                                         b @ Ok(Primitive::Boolean(_)) => b,
                                         Ok(p) => Err(format!("second argument to `and` must be a Boolean (given {p})")),
                                         e @ _ => e,
@@ -119,12 +123,12 @@ pub fn eval_expression_with_env(expr: Expression, env: Rc<EvalEnv>) -> Result<Pr
                             check_arg_len!(exprs, "or", 2);
                             unpack_args!(exprs => bool_a, bool_b);
 
-                            match eval_expression_with_env(bool_a, env.clone()) {
+                            match eval_nv_expression_with_env(bool_a, env.clone()) {
                                 Ok(Primitive::Boolean(m)) => {
                                     if m {
                                         Ok(Primitive::Boolean(true))
                                     } else {
-                                        match eval_expression_with_env(bool_b, env) {
+                                        match eval_nv_expression_with_env(bool_b, env) {
                                         b @ Ok(Primitive::Boolean(_)) => b,
                                         Ok(p) => Err(format!("second argument to `or` must be a Boolean (given {p})")),
                                         e @ _ => e,
@@ -141,7 +145,7 @@ pub fn eval_expression_with_env(expr: Expression, env: Rc<EvalEnv>) -> Result<Pr
                             check_arg_len!(exprs, "(+)", 2);
                             let x = exprs
                                 .into_iter()
-                                .map(|e| eval_expression_with_env(e, env.clone()));
+                                .map(|e| eval_nv_expression_with_env(e, env.clone()));
                             unpack_args!(x => a, b);
 
                             primitive::add(a?, b?)
@@ -150,7 +154,7 @@ pub fn eval_expression_with_env(expr: Expression, env: Rc<EvalEnv>) -> Result<Pr
                             check_arg_len!(exprs, "(-)", 2);
                             let x = exprs
                                 .into_iter()
-                                .map(|e| eval_expression_with_env(e, env.clone()));
+                                .map(|e| eval_nv_expression_with_env(e, env.clone()));
                             unpack_args!(x => a, b);
 
                             primitive::sub(a?, b?)
@@ -159,7 +163,7 @@ pub fn eval_expression_with_env(expr: Expression, env: Rc<EvalEnv>) -> Result<Pr
                             check_arg_len!(exprs, "(*)", 2);
                             let x = exprs
                                 .into_iter()
-                                .map(|e| eval_expression_with_env(e, env.clone()));
+                                .map(|e| eval_nv_expression_with_env(e, env.clone()));
                             unpack_args!(x => a, b);
 
                             primitive::mult(a?, b?)
@@ -169,7 +173,7 @@ pub fn eval_expression_with_env(expr: Expression, env: Rc<EvalEnv>) -> Result<Pr
                             check_arg_len!(exprs, "(/)", 2);
                             let x = exprs
                                 .into_iter()
-                                .map(|e| eval_expression_with_env(e, env.clone()));
+                                .map(|e| eval_nv_expression_with_env(e, env.clone()));
                             unpack_args!(x => a, b);
 
                             primitive::divide(a?, b?)
@@ -178,7 +182,7 @@ pub fn eval_expression_with_env(expr: Expression, env: Rc<EvalEnv>) -> Result<Pr
                             check_arg_len!(exprs, "not", 1);
                             let x = exprs
                                 .into_iter()
-                                .map(|e| eval_expression_with_env(e, env.clone()));
+                                .map(|e| eval_nv_expression_with_env(e, env.clone()));
                             unpack_args!(x => a);
 
                             primitive::not(a?)
@@ -187,7 +191,7 @@ pub fn eval_expression_with_env(expr: Expression, env: Rc<EvalEnv>) -> Result<Pr
                             check_arg_len!(exprs, "cons", 2);
                             let x = exprs
                                 .into_iter()
-                                .map(|e| eval_expression_with_env(e, env.clone()));
+                                .map(|e| eval_nv_expression_with_env(e, env.clone()));
                             unpack_args!(x => a, b);
 
                             primitive::cons(a?, b?)
@@ -196,7 +200,7 @@ pub fn eval_expression_with_env(expr: Expression, env: Rc<EvalEnv>) -> Result<Pr
                             check_arg_len!(exprs, "first", 1);
                             let x = exprs
                                 .into_iter()
-                                .map(|e| eval_expression_with_env(e, env.clone()));
+                                .map(|e| eval_nv_expression_with_env(e, env.clone()));
                             unpack_args!(x => a);
 
                             primitive::first(a?)
@@ -205,7 +209,7 @@ pub fn eval_expression_with_env(expr: Expression, env: Rc<EvalEnv>) -> Result<Pr
                             check_arg_len!(exprs, "rest", 1);
                             let x = exprs
                                 .into_iter()
-                                .map(|e| eval_expression_with_env(e, env.clone()));
+                                .map(|e| eval_nv_expression_with_env(e, env.clone()));
                             unpack_args!(x => a);
 
                             primitive::rest(a?)
@@ -217,7 +221,7 @@ pub fn eval_expression_with_env(expr: Expression, env: Rc<EvalEnv>) -> Result<Pr
                 crate::FunctionName::Custom(name) => {
                     let args: Vec<Primitive> = exprs
                         .into_iter()
-                        .map(|e| eval_expression_with_env(e, env.clone()))
+                        .map(|e| eval_nv_expression_with_env(e, env.clone()))
                         .collect::<Result<Vec<Primitive>, String>>()?;
                     let lambda = match env.get(&name)? {
                         Primitive::Lambda(lambda) => Ok(lambda),
@@ -229,11 +233,44 @@ pub fn eval_expression_with_env(expr: Expression, env: Rc<EvalEnv>) -> Result<Pr
                         parent: Some(env),
                         entries: arg_map,
                     };
-                    eval_expression_with_env(body, Rc::new(inner_env))
+                    eval_nv_expression_with_env(body, Rc::new(inner_env))
                 }
             }
         }
         Expression::Cond(_) => todo!(),
+    }
+}
+
+pub fn eval_top_level_expression(
+    expr: TopLevelExpression,
+) -> Result<(Option<Primitive>, Rc<EvalEnv>), String> {
+    eval_top_level_expression_with_env(expr, Rc::new(EvalEnv::new()))
+}
+
+pub fn eval_top_level_expression_with_env(
+    expr: TopLevelExpression,
+    env: Rc<EvalEnv>,
+) -> Result<(Option<Primitive>, Rc<EvalEnv>), String> {
+    match expr {
+        TopLevelExpression::ConstantDefinition((name, value)) => {
+            let mut env2 = (*env).clone();
+            env2.entries
+                .insert(name, eval_nv_expression_with_env(value, env)?);
+            Ok((None, Rc::new(env2)))
+        }
+        TopLevelExpression::FunctionDefinition((FunctionName::Custom(name), args, body)) => {
+            let mut env2 = (*env).clone();
+            env2.entries
+                .insert(name, Primitive::Lambda(Lambda((args, Box::new(body)))));
+            Ok((None, Rc::new(env2)))
+        }
+        TopLevelExpression::FunctionDefinition((FunctionName::BuiltIn(n), _, _)) => Err(format!(
+            "cannot define a function with name {:?}, that is a built in function",
+            n
+        )),
+        TopLevelExpression::NonVoidExpression(expr) => {
+            Ok((Some(eval_nv_expression_with_env(expr, env.clone())?), env))
+        }
     }
 }
 
@@ -249,34 +286,4 @@ fn apply_lambda(
 
     let arg_map: HashMap<_, _> = params.into_iter().zip(args.into_iter()).collect();
     Ok((arg_map, *body))
-}
-
-mod builtin {
-    use super::*;
-
-    fn _if(exprs: Vec<Expression>, env: Rc<EvalEnv>) -> Result<Primitive, String> {
-        check_arg_len!(exprs, "if", 3);
-
-        unpack_args!(exprs => bool_expr, true_answer, false_answer);
-
-        match eval_expression_with_env(bool_expr, env.clone()) {
-            Ok(Primitive::Boolean(m)) => {
-                if m {
-                    eval_expression_with_env(true_answer, env)
-                } else {
-                    eval_expression_with_env(false_answer, env)
-                }
-            }
-            Ok(p) => Err(format!(
-                "first argument to `if` must be a Boolean (given {p})"
-            )),
-            Err(e) => Err(e),
-        }
-    }
-
-    fn or(exprs: Vec<Expression>, env: Rc<EvalEnv>) -> Result<Primitive, String> {
-        check_arg_len!(exprs, "or", 2);
-        unpack_args!(exprs => bool_a, bool_b);
-        todo!()
-    }
 }

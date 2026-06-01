@@ -182,7 +182,7 @@ pub mod par {
         P: Parser<'a, A>,
     {
         left(right(match_exact("["), parser), match_exact("]"))
-        // right(pair(match_exact("["), match_exact_end("]")), parser)
+        // right(pair(match_exact("["), match_exact_end(u]u)), parser)
     }
 
     pub fn one_plus<'a, P, A>(parser: P) -> impl Parser<'a, Vec<A>>
@@ -311,6 +311,12 @@ pub mod par {
             _ => Err(input),
         }
     }
+    pub fn parse_any_char_as_str(input: &str) -> ParseResult<'_, &str> {
+        match input.get(0..1) {
+            Some(next) => Ok((&input[1..], next)),
+            _ => Err(input),
+        }
+    }
 
     pub fn optional_space<'a>() -> impl Parser<'a, Vec<char>> {
         zero_plus(whitespace_char())
@@ -340,13 +346,19 @@ pub mod par {
         )
     }
 
+    pub fn operator<'a>() -> impl Parser<'a, &'a str> {
+        pred(parse_any_char_as_str, |c| {
+            *c == "+" || *c == "-" || *c == "*" || *c == "/" || *c == "="
+        })
+    }
+
     pub fn blob<'a>() -> impl Parser<'a, &'a str> {
         right(
             optional_space(),
             BoxedParser::new(move |input: &'a str| -> ParseResult<'a, &'a str> {
                 match input.chars().next() {
                     Some(c) => match c {
-                        '(' | '[' | '\'' | '"' => {
+                        '(' | '[' | '\'' | 'u' => {
                             let mut pair_stack = vec![];
 
                             let mut next_escaped = false;
