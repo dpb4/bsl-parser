@@ -75,6 +75,26 @@ pub fn eval_nv_expression_with_env(
     match expr {
         Expression::Literal(primitive) => Ok(primitive),
         Expression::Token(t) => env.get(&t),
+        Expression::Cond((cases, default)) => {
+            for (question, answer) in cases {
+                match eval_nv_expression_with_env(question, env.clone()) {
+                    Ok(Primitive::Boolean(m)) => {
+                        if m {
+                            return eval_nv_expression_with_env(answer, env);
+                        } else {
+                            continue;
+                        }
+                    }
+                    Ok(p) => {
+                        return Err(format!("`cond` question must be a Boolean (given {p})"));
+                    }
+                    Err(e) => {
+                        return Err(e);
+                    }
+                }
+            }
+            eval_nv_expression_with_env(*default, env)
+        }
         Expression::FunctionCall((name, exprs)) => {
             use Keyword as K;
             match name {
@@ -178,6 +198,15 @@ pub fn eval_nv_expression_with_env(
 
                             primitive::divide(a?, b?)
                         }
+                        K::Equals => {
+                            check_arg_len!(exprs, "(/)", 2);
+                            let x = exprs
+                                .into_iter()
+                                .map(|e| eval_nv_expression_with_env(e, env.clone()));
+                            unpack_args!(x => a, b);
+
+                            Ok(Primitive::Boolean(a? == b?))
+                        }
                         K::Not => {
                             check_arg_len!(exprs, "not", 1);
                             let x = exprs
@@ -214,8 +243,11 @@ pub fn eval_nv_expression_with_env(
 
                             primitive::rest(a?)
                         }
-
-                        _ => todo!(),
+                        K::Cond => todo!(),
+                        K::Define => todo!(),
+                        K::Local => todo!(),
+                        K::List => todo!(),
+                        K::CheckExpect => todo!(),
                     }
                 }
                 crate::FunctionName::Custom(name) => {
@@ -237,7 +269,6 @@ pub fn eval_nv_expression_with_env(
                 }
             }
         }
-        Expression::Cond(_) => todo!(),
     }
 }
 

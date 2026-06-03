@@ -1,7 +1,3 @@
-use std::collections::HashMap;
-
-use crate::Expression;
-
 #[derive(Debug, Clone)]
 pub struct Lambda(pub (Vec<String>, Box<super::Expression>));
 
@@ -109,6 +105,40 @@ impl ConsList {
         }
     }
 }
+
+impl PartialEq for Primitive {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Boolean(l0), Self::Boolean(r0)) => l0 == r0,
+            (Self::Natural(l0), Self::Natural(r0)) => l0 == r0,
+            (Self::Integer(l0), Self::Integer(r0)) => l0 == r0,
+            (Self::Number(l0), Self::Number(r0)) => l0 == r0,
+            (Self::String(l0), Self::String(r0)) => l0 == r0,
+            (Self::List(l0), Self::List(r0)) => l0 == r0,
+            (Self::Lambda(_), Self::Lambda(_)) => false,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for Primitive {}
+
+impl PartialEq for ConsList {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Cons((ae, ar)), Self::Cons((be, br))) => {
+                if *ae == *be {
+                    *ar == *br
+                } else {
+                    false
+                }
+            }
+            (Self::Empty, Self::Empty) => true,
+            _ => false,
+        }
+    }
+}
+impl Eq for ConsList {}
 
 impl std::fmt::Display for ConsList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

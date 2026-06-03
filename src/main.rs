@@ -7,8 +7,10 @@ use bsl_parser::{
 };
 fn main() {
     let stdin = std::io::stdin();
+    // bsl_parser::testing();
     let mut env = Rc::new(EvalEnv::new());
     for line in stdin.lock().lines() {
+        // println!("> ");
         let content = line.unwrap();
 
         let parsed = parse_top_level_expression().parse(&content);
@@ -28,12 +30,11 @@ fn main() {
         let (res, new_env) = evaled.unwrap();
 
         if let Some(p) = res {
-            println!("> {}\n", p);
+            println!("= {}\n", p);
         } else {
-            println!("> ()\n")
+            println!("= ()\n")
         }
 
         env = new_env;
     }
-    // bsl_parser::testing();
 }

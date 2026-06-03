@@ -97,6 +97,11 @@ pub enum TopLevelExpression {
     NonVoidExpression(Expression),
 }
 
+// TODO:
+// mod
+// substring
+// length
+
 #[derive(Debug, Clone)]
 pub enum Keyword {
     Define,
@@ -174,7 +179,14 @@ fn closing(c: char) -> char {
 
 fn parse_literal<'a>() -> impl Parser<'a, Expression> {
     com::map(
-        com::and_then(par::blob(), |b| Primitive::try_from_str(b)),
+        com::and_then(
+            par::maybe_space_then(chain_or!(
+                par::string_literal(),
+                par::number_literal(),
+                par::token()
+            )),
+            |b| Primitive::try_from_str(b),
+        ),
         |p| Expression::Literal(p),
     )
 }
@@ -296,9 +308,23 @@ pub fn testing() {
     //     // let u = "(cond [asd qwd] [(foij as) dfwe] [awd qwd dsa] [else 123])";
     //     let _ = dbg!(parse_top_level_expression().parse(prog));
     //     let _ = dbg!(parse_top_level_expression().parse("\n(define myconst 321)\n"));
-    let parsed = parse_expression()
-        .parse("(if (or true false) 123 \"seoif\")")
-        .unwrap()
-        .1;
-    let _ = dbg!(eval_nv_expression(parsed));
+    // let parsed = parse_expression()
+    //     .parse("(if (or true false) 123 \"seoif\")")
+    //     .unwrap()
+    //     .1;
+    // let _ = dbg!(eval_nv_expression(parsed));
+    // let _ = dbg!(Keyword::get_keyword("*"));
+    let _ = dbg!(
+        chain_or!(par::number_literal(), par::string_literal(), par::token()).parse("\"abcd\"")
+    );
+
+    let _ = dbg!(par::maybe_space_then(
+        par::string_literal(), // com::or(
+                               // par::string_literal(),
+                               // par::token()
+    )
+    .parse("\"abcd\""));
+
+    let _ = dbg!(Primitive::try_from_str("\"abcd\""));
+    let _ = dbg!(par::string_literal().parse("\"abcd\""));
 }

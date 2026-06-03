@@ -311,6 +311,7 @@ pub mod par {
             _ => Err(input),
         }
     }
+
     pub fn parse_any_char_as_str(input: &str) -> ParseResult<'_, &str> {
         match input.get(0..1) {
             Some(next) => Ok((&input[1..], next)),
@@ -350,6 +351,81 @@ pub mod par {
         pred(parse_any_char_as_str, |c| {
             *c == "+" || *c == "-" || *c == "*" || *c == "/" || *c == "="
         })
+    }
+
+    pub fn number_literal<'a>() -> impl Parser<'a, &'a str> {
+        move |input: &'a str| {
+            let mut matched = 0;
+            let mut chars = input.chars();
+
+            if let Some(c) = chars.next() {
+                if c.is_digit(10) || c == '-' {
+                    matched += 1
+                } else {
+                    return Err(input);
+                }
+            } else {
+                return Err(input);
+            }
+
+            let mut decimal = false;
+
+            for next in chars {
+                if next.is_whitespace() || next == ')' || next == ']' {
+                    break;
+                } else if next.is_digit(10) {
+                    matched += 1;
+                } else if next == '.' {
+                    if decimal == false {
+                        matched += 1;
+                        decimal = true;
+                    } else {
+                        return Err(input);
+                    }
+                } else {
+                    return Err(input);
+                }
+            }
+
+            Ok((&input[matched..], &input[..matched]))
+        }
+    }
+
+    pub fn string_literal<'a>() -> impl Parser<'a, &'a str> {
+        right(
+            optional_space(),
+            BoxedParser::new(move |input: &'a str| -> ParseResult<'a, &'a str> {
+                match input.chars().next() {
+                    Some(c) => match c {
+                        '"' => {
+                            let mut next_escaped = false;
+                            let mut closed = false;
+                            let mut end_index = 1;
+
+                            for i in input.chars().skip(1) {
+                                end_index += 1;
+                                if next_escaped {
+                                    next_escaped = false;
+                                } else if i == '\\' {
+                                    next_escaped = true;
+                                } else if i == '"' {
+                                    closed = true;
+                                    break;
+                                }
+                            }
+
+                            if closed {
+                                Ok((&input[end_index..], &input[..end_index]))
+                            } else {
+                                Err("unmatched pair")
+                            }
+                        }
+                        _ => Err("not a string literal"),
+                    },
+                    None => Err("not a string literal"),
+                }
+            }),
+        )
     }
 
     pub fn blob<'a>() -> impl Parser<'a, &'a str> {
