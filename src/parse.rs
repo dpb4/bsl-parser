@@ -111,39 +111,6 @@ pub mod com {
             Err(_) => parser2.parse(input),
         }
     }
-}
-pub mod par {
-    use crate::closes;
-    use crate::is_closing;
-    use crate::is_opening;
-
-    use super::com::*;
-    use super::BoxedParser;
-    use super::ParseResult;
-    use super::Parser;
-
-    pub fn identity<'a>() -> impl Parser<'a, ()> {
-        move |input| Ok((input, ()))
-    }
-
-    pub fn match_exact<'a>(expected: &'static str) -> impl Parser<'a, &'static str> {
-        move |input: &'a str| {
-            if let Some(stripped) = input.strip_prefix(expected) {
-                Ok((stripped, expected))
-            } else {
-                Err(input)
-            }
-        }
-    }
-    pub fn match_exact_end<'a>(expected: &'static str) -> impl Parser<'a, &'static str> {
-        move |input: &'a str| {
-            if let Some(stripped) = input.strip_suffix(expected) {
-                Ok((stripped, expected))
-            } else {
-                Err(input)
-            }
-        }
-    }
     pub fn pred<'a, P, A, F>(parser: P, predicate: F) -> impl Parser<'a, A>
     where
         P: Parser<'a, A>,
@@ -158,33 +125,12 @@ pub mod par {
             Err(input)
         }
     }
-    pub fn whitespace_char<'a>() -> impl Parser<'a, char> {
-        pred(parse_any_char, |c| c.is_whitespace())
-    }
-
-    pub fn paren<'a, P, A>(parser: P) -> impl Parser<'a, A>
-    where
-        P: Parser<'a, A>,
-    {
-        // right(pair(match_exact("("), match_exact_end(")")), parser)
-        left(right(match_exact("("), parser), match_exact(")"))
-    }
-
     pub fn lazy<'a, P, A>(parser: P) -> impl Parser<'a, A>
     where
         P: Parser<'a, A>,
     {
         move |s| parser.parse(s)
     }
-
-    pub fn bracket<'a, P, A>(parser: P) -> impl Parser<'a, A>
-    where
-        P: Parser<'a, A>,
-    {
-        left(right(match_exact("["), parser), match_exact("]"))
-        // right(pair(match_exact("["), match_exact_end(u]u)), parser)
-    }
-
     pub fn one_plus<'a, P, A>(parser: P) -> impl Parser<'a, Vec<A>>
     where
         P: Parser<'a, A>,
@@ -223,7 +169,6 @@ pub mod par {
             Ok((input, result))
         }
     }
-
     pub fn parse_a_until_b<'a, P1, P2, R1, R2>(
         multiple: P1,
         last: P2,
@@ -252,38 +197,63 @@ pub mod par {
             }
         }
     }
+}
+pub mod par {
 
-    pub fn parse_simple_word<'a>(input: &'a str) -> ParseResult<'a, &'a str> {
-        let mut matched = 0;
-        let mut chars = input.chars();
+    use super::com::*;
+    use super::BoxedParser;
+    use super::ParseResult;
+    use super::Parser;
 
-        match chars.next() {
-            Some(_) => {
-                matched += 1;
-            }
-            _ => {
-                return Err(input);
-            }
-        };
-
-        for next in chars {
-            if next.is_alphanumeric() || next == '-' || next == '_' {
-                // if !next.is_whitespace() {
-                matched += 1;
-            } else {
-                break;
-            }
-        }
-
-        Ok((&input[matched..], &input[..matched]))
+    pub fn identity<'a>() -> impl Parser<'a, ()> {
+        move |input| Ok((input, ()))
     }
 
-    pub fn parse_token<'a>(input: &'a str) -> ParseResult<'a, &'a str> {
+    pub fn match_exact<'a>(expected: &'static str) -> impl Parser<'a, &'static str> {
+        move |input: &'a str| {
+            if let Some(stripped) = input.strip_prefix(expected) {
+                Ok((stripped, expected))
+            } else {
+                Err(input)
+            }
+        }
+    }
+    // pub fn match_exact_end<'a>(expected: &'static str) -> impl Parser<'a, &'static str> {
+    //     move |input: &'a str| {
+    //         if let Some(stripped) = input.strip_suffix(expected) {
+    //             Ok((stripped, expected))
+    //         } else {
+    //             Err(input)
+    //         }
+    //     }
+    // }
+
+    pub fn whitespace_char<'a>() -> impl Parser<'a, char> {
+        pred(parse_any_char, |c| c.is_whitespace())
+    }
+
+    pub fn paren<'a, P, A>(parser: P) -> impl Parser<'a, A>
+    where
+        P: Parser<'a, A>,
+    {
+        // right(pair(match_exact("("), match_exact_end(")")), parser)
+        left(right(match_exact("("), parser), match_exact(")"))
+    }
+
+    pub fn bracket<'a, P, A>(parser: P) -> impl Parser<'a, A>
+    where
+        P: Parser<'a, A>,
+    {
+        left(right(match_exact("["), parser), match_exact("]"))
+        // right(pair(match_exact("["), match_exact_end(u]u)), parser)
+    }
+
+    pub fn parse_identifier<'a>(input: &'a str) -> ParseResult<'a, &'a str> {
         let mut matched = 0;
         let mut chars = input.chars();
 
         if let Some(c) = chars.next() {
-            if c.is_alphabetic() || c == '_' {
+            if c.is_alphabetic() {
                 matched += 1
             } else {
                 return Err(input);
@@ -293,7 +263,7 @@ pub mod par {
         }
 
         for next in chars {
-            if next.is_whitespace() || is_closing(next) {
+            if next.is_whitespace() || next == ')' || next == ']' {
                 break;
             } else if next.is_alphanumeric() || next == '-' || next == '_' {
                 matched += 1;
@@ -338,11 +308,11 @@ pub mod par {
     }
 
     // TODO should token consider spaces? probably not
-    pub fn token<'a>() -> impl Parser<'a, &'a str> {
+    pub fn identifier<'a>() -> impl Parser<'a, &'a str> {
         right(
             optional_space(),
             BoxedParser::new(move |input: &'a str| -> ParseResult<'a, &'a str> {
-                parse_token(input)
+                parse_identifier(input)
             }),
         )
     }
@@ -423,51 +393,6 @@ pub mod par {
                         _ => Err("not a string literal"),
                     },
                     None => Err("not a string literal"),
-                }
-            }),
-        )
-    }
-
-    pub fn blob<'a>() -> impl Parser<'a, &'a str> {
-        right(
-            optional_space(),
-            BoxedParser::new(move |input: &'a str| -> ParseResult<'a, &'a str> {
-                match input.chars().next() {
-                    Some(c) => match c {
-                        '(' | '[' | '\'' | 'u' => {
-                            let mut pair_stack = vec![];
-
-                            let mut next_escaped = false;
-                            let mut end_index = 0;
-
-                            for i in input.chars() {
-                                if next_escaped {
-                                    next_escaped = false;
-                                } else if i == '\\' {
-                                    next_escaped = true;
-                                } else if !pair_stack.is_empty()
-                                    && closes(*pair_stack.last().unwrap(), i)
-                                {
-                                    pair_stack.pop();
-                                } else if is_opening(i) {
-                                    pair_stack.push(i);
-                                }
-                                end_index += 1;
-
-                                if pair_stack.is_empty() {
-                                    break;
-                                }
-                            }
-
-                            if pair_stack.is_empty() {
-                                Ok((&input[end_index..], &input[..end_index]))
-                            } else {
-                                Err("unmatched pair")
-                            }
-                        }
-                        _ => parse_simple_word(input),
-                    },
-                    None => Err("no word"),
                 }
             }),
         )

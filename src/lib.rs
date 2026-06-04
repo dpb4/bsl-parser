@@ -1,4 +1,3 @@
-use crate::eval::eval_nv_expression;
 use std::collections::HashMap;
 pub mod eval;
 pub mod parse;
@@ -69,7 +68,7 @@ impl<'a> SequentialExecution<'a> {
 #[derive(Debug, Clone)]
 pub enum Expression {
     Literal(Primitive),
-    Token(String),
+    Identifier(String),
     FunctionCall((FunctionName, Vec<Expression>)),
     Cond((Vec<(Expression, Expression)>, Box<Expression>)),
     // Local((SequentialExecution<'a>, Box<Expression>)),
@@ -78,7 +77,7 @@ pub enum Expression {
 impl<'a> Expression {
     fn into_owned(self) -> Self {
         match self {
-            Self::Token(cs) => Self::Token(cs.to_owned()),
+            Self::Identifier(cs) => Self::Identifier(cs.to_owned()),
             s @ _ => s,
         }
     }
@@ -148,42 +147,13 @@ impl Keyword {
     }
 }
 
-fn is_parend(s: &str) -> bool {
-    s.starts_with("(") && s.ends_with(")")
-}
-
-fn is_opening(c: char) -> bool {
-    matches!(c, '(' | '[' | '\'' | '"')
-}
-
-fn is_closing(c: char) -> bool {
-    matches!(c, ')' | ']' | '\'' | '"')
-}
-
-fn closes(o: char, c: char) -> bool {
-    if is_opening(o) {
-        closing(o) == c
-    } else {
-        false
-    }
-}
-fn closing(c: char) -> char {
-    match c {
-        '(' => ')',
-        '[' => ']',
-        '\'' => '\'',
-        '"' => '"',
-        _ => panic!("that is not a matchable symbol"),
-    }
-}
-
 fn parse_literal<'a>() -> impl Parser<'a, Expression> {
     com::map(
         com::and_then(
             par::maybe_space_then(chain_or!(
                 par::string_literal(),
                 par::number_literal(),
-                par::token()
+                par::identifier()
             )),
             |b| Primitive::try_from_str(b),
         ),
@@ -192,11 +162,13 @@ fn parse_literal<'a>() -> impl Parser<'a, Expression> {
 }
 
 fn parse_token<'a>() -> impl Parser<'a, Expression> {
-    com::map(par::token(), |t| Expression::Token(String::from(t)))
+    com::map(par::identifier(), |t| {
+        Expression::Identifier(String::from(t))
+    })
 }
 
 fn parse_fn_name<'a>() -> impl Parser<'a, FunctionName> {
-    com::map(com::or(par::token(), par::operator()), |s| {
+    com::map(com::or(par::identifier(), par::operator()), |s| {
         if let Some(k) = Keyword::get_keyword(s) {
             FunctionName::BuiltIn(k)
         } else {
@@ -227,7 +199,7 @@ fn parse_cond<'a>() -> impl Parser<'a, Expression> {
     com::map(
         par::paren(com::right(
             par::match_exact("cond"), // TODO add space after cond
-            par::maybe_space_then(par::parse_a_until_b(single_case, else_case)),
+            par::maybe_space_then(com::parse_a_until_b(single_case, else_case)),
         )),
         |(cases, else_case)| Expression::Cond((cases, Box::new(else_case))),
     )
@@ -247,7 +219,7 @@ fn parse_const_def<'a>() -> impl Parser<'a, TopLevelExpression> {
         par::maybe_space_then(par::paren(com::right(
             par::match_exact("define"),
             par::maybe_space_then(com::pair(
-                par::token(),
+                par::identifier(),
                 par::maybe_space_then(lazy!(parse_expression())),
             )),
         ))),
@@ -261,8 +233,8 @@ fn parse_fn_def<'a>() -> impl Parser<'a, TopLevelExpression> {
             par::match_exact("define"),
             par::maybe_space_then(com::pair(
                 par::paren(com::pair(
-                    par::token(),
-                    par::one_plus(par::maybe_space_then(par::token())),
+                    par::identifier(),
+                    com::one_plus(par::maybe_space_then(par::identifier())),
                 )),
                 par::maybe_space_then(lazy!(parse_expression())),
             )),
@@ -293,9 +265,6 @@ pub enum ParseErrorType {
     ArgumentCount(u8, u8, &'static str),
 }
 
-pub fn eval_sequential(se: SequentialExecution) -> Result<(), ()> {
-    todo!()
-}
 pub fn testing() {
     //     let prog = r#"
     // (define myconst 321)
@@ -314,9 +283,12 @@ pub fn testing() {
     //     .1;
     // let _ = dbg!(eval_nv_expression(parsed));
     // let _ = dbg!(Keyword::get_keyword("*"));
-    let _ = dbg!(
-        chain_or!(par::number_literal(), par::string_literal(), par::token()).parse("\"abcd\"")
-    );
+    let _ = dbg!(chain_or!(
+        par::number_literal(),
+        par::string_literal(),
+        par::identifier()
+    )
+    .parse("\"abcd\""));
 
     let _ = dbg!(par::maybe_space_then(
         par::string_literal(), // com::or(

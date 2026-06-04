@@ -74,7 +74,7 @@ pub fn eval_nv_expression_with_env(
 ) -> Result<Primitive, String> {
     match expr {
         Expression::Literal(primitive) => Ok(primitive),
-        Expression::Token(t) => env.get(&t),
+        Expression::Identifier(t) => env.get(&t),
         Expression::Cond((cases, default)) => {
             for (question, answer) in cases {
                 match eval_nv_expression_with_env(question, env.clone()) {
@@ -127,10 +127,10 @@ pub fn eval_nv_expression_with_env(
                                         Ok(Primitive::Boolean(false))
                                     } else {
                                         match eval_nv_expression_with_env(bool_b, env) {
-                                        b @ Ok(Primitive::Boolean(_)) => b,
-                                        Ok(p) => Err(format!("second argument to `and` must be a Boolean (given {p})")),
-                                        e @ _ => e,
-                                    }
+                                            b @ Ok(Primitive::Boolean(_)) => b,
+                                            Ok(p) => Err(format!("second argument to `and` must be a Boolean (given {p})")),
+                                            e @ _ => e,
+                                        }
                                     }
                                 }
                                 Ok(p) => Err(format!(
