@@ -202,7 +202,7 @@ pub mod com {
                     Err(ParseError::from_ctx(ctx, "predicate failed"))
                 }
             }
-            e @ _ => e,
+            e => e,
         }
     }
     pub fn lazy<'a, P, A>(parser: P) -> impl Parser<'a, A>
@@ -452,7 +452,7 @@ pub mod par {
             let mut chars = ctx.remaining.chars();
 
             if let Some(c) = chars.next() {
-                if c.is_digit(10) || c == '-' {
+                if c.is_ascii_digit() || c == '-' {
                     matched += 1
                 } else {
                     return Err(ParseError::from_ctx(
@@ -463,7 +463,7 @@ pub mod par {
             } else {
                 return Err(ParseError::from_ctx(
                     ctx,
-                    format!("number literal got empty string"),
+                    "number literal got empty string".to_string(),
                 ));
             }
 
@@ -472,10 +472,10 @@ pub mod par {
             for next in chars {
                 if next.is_whitespace() || next == ')' || next == ']' {
                     break;
-                } else if next.is_digit(10) {
+                } else if next.is_ascii_digit() {
                     matched += 1;
                 } else if next == '.' {
-                    if decimal == false {
+                    if !decimal {
                         matched += 1;
                         decimal = true;
                     } else {

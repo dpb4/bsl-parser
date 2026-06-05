@@ -30,6 +30,12 @@ pub struct EvalEnv {
     entries: HashMap<String, Primitive>,
 }
 
+impl Default for EvalEnv {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EvalEnv {
     pub fn get(&self, name: &str) -> Result<Primitive, String> {
         if let Some(v) = self.entries.get(name) {
@@ -37,7 +43,7 @@ impl EvalEnv {
         } else {
             match self.parent.as_ref() {
                 Some(parent) => parent.get(name),
-                None => return Err(format!("'{}' is undefined in the current scope", name)),
+                None => Err(format!("'{}' is undefined in the current scope", name)),
             }
         }
     }
@@ -129,14 +135,14 @@ pub fn eval_nv_expression_with_env(
                                         match eval_nv_expression_with_env(bool_b, env) {
                                             b @ Ok(Primitive::Boolean(_)) => b,
                                             Ok(p) => Err(format!("second argument to `and` must be a Boolean (given {p})")),
-                                            e @ _ => e,
+                                            e => e,
                                         }
                                     }
                                 }
                                 Ok(p) => Err(format!(
                                     "first argument to `and` must be a Boolean (given {p})"
                                 )),
-                                e @ _ => e,
+                                e => e,
                             }
                         }
                         K::Or => {
@@ -151,14 +157,14 @@ pub fn eval_nv_expression_with_env(
                                         match eval_nv_expression_with_env(bool_b, env) {
                                         b @ Ok(Primitive::Boolean(_)) => b,
                                         Ok(p) => Err(format!("second argument to `or` must be a Boolean (given {p})")),
-                                        e @ _ => e,
+                                        e => e,
                                     }
                                     }
                                 }
                                 Ok(p) => Err(format!(
                                     "first argument to `or` must be a Boolean (given {p})"
                                 )),
-                                e @ _ => e,
+                                e => e,
                             }
                         }
                         K::Plus => {
@@ -253,7 +259,7 @@ pub fn eval_nv_expression_with_env(
                 crate::FunctionName::Custom(name) => {
                     let lambda = match env.get(&name)? {
                         Primitive::Lambda(lambda) => Ok(lambda),
-                        p @ _ => Err(format!("{name} is not a function ({name} = {p})")),
+                        p => Err(format!("{name} is not a function ({name} = {p})")),
                     }?;
                     let args: Vec<Primitive> = exprs
                         .into_iter()
@@ -315,6 +321,6 @@ fn apply_lambda(
         return Err("arg length mismatch".into());
     }
 
-    let arg_map: HashMap<_, _> = params.into_iter().zip(args.into_iter()).collect();
+    let arg_map: HashMap<_, _> = params.into_iter().zip(args).collect();
     Ok((arg_map, *body))
 }

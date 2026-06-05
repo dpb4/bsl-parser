@@ -78,7 +78,7 @@ impl<'a> Expression {
     fn into_owned(self) -> Self {
         match self {
             Self::Identifier(cs) => Self::Identifier(cs.to_owned()),
-            s @ _ => s,
+            s => s,
         }
     }
 }
@@ -155,7 +155,7 @@ fn parse_literal<'a>() -> impl Parser<'a, Expression> {
                 par::number_literal(),
                 par::identifier()
             )),
-            |b| Primitive::try_from_str(&b[..]).ok_or("unable to parse primitive"),
+            |b| Primitive::try_from_str(b).ok_or("unable to parse primitive"),
         ),
         Expression::Literal,
     )

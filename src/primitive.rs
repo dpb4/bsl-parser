@@ -1,4 +1,3 @@
-use crate::parse::{ParseContext, ParseResult};
 
 #[derive(Debug, Clone)]
 pub struct Lambda(pub (Vec<String>, Box<super::Expression>));
@@ -107,7 +106,7 @@ impl ConsList {
     fn to_string(&self) -> String {
         match self {
             ConsList::Empty => String::from("empty"),
-            ConsList::Cons((e, r)) => format!("(cons {} {})", *e, r.to_string()),
+            ConsList::Cons((e, r)) => format!("(cons {} {})", *e, r),
         }
     }
 }

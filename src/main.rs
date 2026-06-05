@@ -1,7 +1,7 @@
 use std::{io::BufRead, rc::Rc};
 
 use bsl_parser::{
-    eval::{eval_top_level_expression, eval_top_level_expression_with_env, EvalEnv},
+    eval::{eval_top_level_expression_with_env, EvalEnv},
     parse::Parser,
     *,
 };
