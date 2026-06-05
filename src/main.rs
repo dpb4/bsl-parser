@@ -7,13 +7,13 @@ use bsl_parser::{
 };
 fn main() {
     let stdin = std::io::stdin();
-    // bsl_parser::testing();
+    bsl_parser::testing();
     let mut env = Rc::new(EvalEnv::new());
     for line in stdin.lock().lines() {
         // println!("> ");
         let content = line.unwrap();
 
-        let parsed = parse_top_level_expression().parse(&content);
+        let parsed = parse_top_level_expression().parse((content[..]).into());
 
         if let Err(e) = parsed {
             println!("parsing error: {e}\n");

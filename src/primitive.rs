@@ -1,3 +1,5 @@
+use crate::parse::{ParseContext, ParseResult};
+
 #[derive(Debug, Clone)]
 pub struct Lambda(pub (Vec<String>, Box<super::Expression>));
 
@@ -69,33 +71,37 @@ impl Primitive {
         }
     }
 
-    pub fn try_from_str(input: &str) -> Result<Self, &str> {
+    pub fn try_from_str(input: &str) -> Option<Self> {
         if input == "empty" {
-            return Ok(Self::List(ConsList::Empty));
+            return Some(Self::List(ConsList::Empty));
         } else if input == "true" {
-            return Ok(Self::Boolean(true));
+            return Some(Self::Boolean(true));
         } else if input == "false" {
-            return Ok(Self::Boolean(false));
+            return Some(Self::Boolean(false));
         }
 
         if input.starts_with("\"") && input.ends_with("\"")
             || input.starts_with("'") && input.ends_with("'")
         {
-            return Ok(Self::String(input[1..input.len() - 1].to_string()));
+            return Some(Self::String(input[1..input.len() - 1].to_string()));
         }
 
         match input.parse::<u32>() {
-            Ok(n) => Ok(Self::Natural(n)),
+            Ok(n) => Some(Self::Natural(n)),
             Err(_) => match input.parse::<i32>() {
-                Ok(n) => Ok(Self::Integer(n)),
+                Ok(n) => Some(Self::Integer(n)),
                 Err(_) => match input.parse::<f32>() {
-                    Ok(n) => Ok(Self::Number(n)),
-                    Err(_) => Err(input),
+                    Ok(n) => Some(Self::Number(n)),
+                    Err(_) => None,
                 },
             },
         }
     }
 }
+
+// pub fn parse_primitive(ctx: ParseContext) -> ParseResult<Primitive> {
+//     xkk
+// }
 
 impl ConsList {
     fn to_string(&self) -> String {

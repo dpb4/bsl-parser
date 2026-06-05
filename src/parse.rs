@@ -1,51 +1,124 @@
-pub type ParseResult<'a, Output> = Result<(&'a str, Output), &'a str>;
+pub type ParseResult<'a, Output> = Result<(ParseContext<'a>, Output), ParseError<'a>>;
 
+#[derive(Debug, Clone)]
+pub struct ParseContext<'a> {
+    remaining: &'a str,
+    current_index: usize,
+    line: usize,
+    col: usize,
+}
+
+impl<'a> From<&'a str> for ParseContext<'a> {
+    fn from(value: &'a str) -> Self {
+        Self {
+            remaining: value,
+            current_index: 0,
+            line: 0,
+            col: 0,
+        }
+    }
+}
+
+impl<'a> ParseContext<'a> {
+    // pub fn inc_index(mut self, n: usize) -> Self {
+    //     self.current_index += n;
+    //     self.remaining = &self.remaining[n..];
+    //     self
+    // }
+
+    pub fn produce(mut self, n: usize) -> (Self, &'a str) {
+        let (new, remaining) = self.remaining.split_at(n);
+        self.remaining = remaining;
+        self.current_index += n;
+        (self, new)
+    }
+
+    // pub fn get_current(self) ->
+}
+
+impl<'a> std::fmt::Display for ParseContext<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}\nindex: {}, line: {}, col: {}",
+            self.remaining, self.current_index, self.line, self.col
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ParseError<'a> {
+    ctx: ParseContext<'a>,
+    msg: String,
+}
+impl<'a> std::fmt::Display for ParseError<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "parse error at:\n{}\nerror msg: {}", self.ctx, self.msg)
+    }
+}
+
+impl<'a> ParseError<'a> {
+    pub fn from_ctx<S: Into<String>>(ctx: ParseContext<'a>, msg: S) -> Self {
+        Self {
+            ctx,
+            msg: msg.into(),
+        }
+    }
+    pub fn append_msg<S: Into<String>>(self, new_line: S) -> Self {
+        Self {
+            ctx: self.ctx,
+            msg: self.msg + &new_line.into(),
+        }
+    }
+}
 pub trait Parser<'a, Output> {
-    fn parse(&self, input: &'a str) -> ParseResult<'a, Output>;
+    fn parse(&self, ctx: ParseContext<'a>) -> ParseResult<'a, Output>;
 
-    // fn map<'a, P, F, B>(&self, map_fn: F) -> impl Parser<'a, B>
+    // fn map<'a, P, F, B>(&self, map_fn: F) -> impl Parser<B>
     // where
-    //     P: Parser<'a, A>,
+    //     P: Parser<A>,
     //     F: Fn(Output) -> B,
     // {
-    //     move |input| {
+    //     move |input.into()| {
     //         self.parse(input)
-    //             .map(|(next_input, result)| (next_input, map_fn(result)))
+    //             .map(|(next_ctx, result)| (next_ctx, map_fn(result)))
     //     }
     // }
 }
 
 impl<'a, F, Output> Parser<'a, Output> for F
 where
-    F: Fn(&'a str) -> ParseResult<'a, Output>,
+    F: Fn(ParseContext<'a>) -> ParseResult<'a, Output>,
 {
-    fn parse(&self, input: &'a str) -> ParseResult<'a, Output> {
-        self(input)
+    fn parse(&self, ctx: ParseContext<'a>) -> ParseResult<'a, Output> {
+        self(ctx)
     }
 }
 
-pub struct BoxedParser<'a, Output> {
-    parser: Box<dyn Parser<'a, Output> + 'a>,
-}
+// pub struct BoxedParser<Output> {
+//     parser: Box<dyn Parser<Output>>,
+// }
 
-impl<'a, Output> BoxedParser<'a, Output> {
-    pub fn new<P>(parser: P) -> Self
-    where
-        P: Parser<'a, Output> + 'a,
-    {
-        BoxedParser {
-            parser: Box::new(parser),
-        }
-    }
-}
+// impl<Output> BoxedParser<Output> {
+//     pub fn new<P>(parser: P) -> Self
+//     where
+//         P: Parser<Output>,
+//     {
+//         BoxedParser {
+//             parser: Box::new(parser),
+//         }
+//     }
+// }
 
-impl<'a, Output> Parser<'a, Output> for BoxedParser<'a, Output> {
-    fn parse(&self, input: &'a str) -> ParseResult<'a, Output> {
-        self.parser.parse(input)
-    }
-}
+// impl<'a, Output> Parser<Output> for BoxedParser<Output> {
+//     fn parse(&self, ctx: ParseContext) -> ParseResult<Output> {
+//         self.parser.parse(ctx)
+//     }
+// }
 
 pub mod com {
+    use crate::parse::{ParseContext, ParseError};
+
     use super::Parser;
 
     pub fn pair<'a, P1, P2, R1, R2>(parser1: P1, parser2: P2) -> impl Parser<'a, (R1, R2)>
@@ -53,10 +126,10 @@ pub mod com {
         P1: Parser<'a, R1>,
         P2: Parser<'a, R2>,
     {
-        move |input| {
-            parser1.parse(input).and_then(|(next_input, result1)| {
+        move |ctx| {
+            parser1.parse(ctx).and_then(|(next_ctx, result1)| {
                 parser2
-                    .parse(next_input)
+                    .parse(next_ctx)
                     .map(|(last_input, result2)| (last_input, (result1, result2)))
             })
         }
@@ -67,22 +140,27 @@ pub mod com {
         P: Parser<'a, A>,
         F: Fn(A) -> B,
     {
-        move |input| {
+        move |ctx| {
             parser
-                .parse(input)
-                .map(|(next_input, result)| (next_input, map_fn(result)))
+                .parse(ctx)
+                .map(|(next_ctx, result)| (next_ctx, map_fn(result)))
         }
     }
 
-    pub fn and_then<'a, P, F, A, B>(parser: P, map_fn: F) -> impl Parser<'a, B>
+    pub fn apply<'a, P, F, A, B, S>(parser: P, try_fn: F) -> impl Parser<'a, B>
     where
+        S: Into<String>,
         P: Parser<'a, A>,
-        F: Fn(A) -> Result<B, &'a str>,
+        F: Fn(A) -> Result<B, S>,
     {
-        move |input| {
+        move |ctx| {
             parser
-                .parse(input)
-                .and_then(|(next_input, val)| map_fn(val).map(|val2| (next_input, val2)))
+                .parse(ctx)
+                // .and_then(|(next_ctx, val)| map_fn(val).map(|val2| (next_ctx, val2)))
+                .and_then(|(next_ctx, val)| match try_fn(val) {
+                    Ok(val_b) => Ok((next_ctx, val_b)),
+                    Err(err_msg) => Err(ParseError::from_ctx(next_ctx, err_msg)),
+                })
         }
     }
     pub fn left<'a, P1, P2, R1, R2>(parser1: P1, parser2: P2) -> impl Parser<'a, R1>
@@ -106,9 +184,9 @@ pub mod com {
         P1: Parser<'a, R>,
         P2: Parser<'a, R>,
     {
-        move |input| match parser1.parse(input) {
+        move |ctx: ParseContext<'a>| match parser1.parse(ctx.clone()) {
             r @ Ok(_) => r,
-            Err(_) => parser2.parse(input),
+            Err(_) => parser2.parse(ctx),
         }
     }
     pub fn pred<'a, P, A, F>(parser: P, predicate: F) -> impl Parser<'a, A>
@@ -116,13 +194,15 @@ pub mod com {
         P: Parser<'a, A>,
         F: Fn(&A) -> bool,
     {
-        move |input| {
-            if let Ok((next_input, value)) = parser.parse(input) {
-                if predicate(&value) {
-                    return Ok((next_input, value));
+        move |ctx: ParseContext<'a>| match parser.parse(ctx.clone()) {
+            Ok((next_ctx, val)) => {
+                if predicate(&val) {
+                    Ok((next_ctx, val))
+                } else {
+                    Err(ParseError::from_ctx(ctx, "predicate failed"))
                 }
             }
-            Err(input)
+            e @ _ => e,
         }
     }
     pub fn lazy<'a, P, A>(parser: P) -> impl Parser<'a, A>
@@ -135,22 +215,33 @@ pub mod com {
     where
         P: Parser<'a, A>,
     {
-        move |mut input| {
+        move |ctx| {
             let mut result = Vec::new();
+            let mut cur_ctx;
+            match parser.parse(ctx) {
+                Ok((next_ctx, first_item)) => {
+                    cur_ctx = next_ctx;
+                    result.push(first_item);
+                }
+                Err(pe) => {
+                    return Err(pe.append_msg("failed at first attempt in one_plus"));
+                }
+            };
 
-            if let Ok((next_input, first_item)) = parser.parse(input) {
-                input = next_input;
-                result.push(first_item);
-            } else {
-                return Err(input);
+            loop {
+                match parser.parse(cur_ctx) {
+                    Ok((next_ctx, next_item)) => {
+                        cur_ctx = next_ctx;
+                        result.push(next_item);
+                    }
+                    Err(pe) => {
+                        cur_ctx = pe.ctx;
+                        break;
+                    }
+                }
             }
 
-            while let Ok((next_input, next_item)) = parser.parse(input) {
-                input = next_input;
-                result.push(next_item);
-            }
-
-            Ok((input, result))
+            Ok((cur_ctx, result))
         }
     }
 
@@ -158,15 +249,24 @@ pub mod com {
     where
         P: Parser<'a, A>,
     {
-        move |mut input| {
+        move |ctx| {
             let mut result = Vec::new();
+            let mut cur_ctx = ctx;
 
-            while let Ok((next_input, next_item)) = parser.parse(input) {
-                input = next_input;
-                result.push(next_item);
+            loop {
+                match parser.parse(cur_ctx) {
+                    Ok((next_ctx, next_item)) => {
+                        cur_ctx = next_ctx;
+                        result.push(next_item);
+                    }
+                    Err(pe) => {
+                        cur_ctx = pe.ctx;
+                        break;
+                    }
+                }
             }
 
-            Ok((input, result))
+            Ok((cur_ctx, result))
         }
     }
     pub fn parse_a_until_b<'a, P1, P2, R1, R2>(
@@ -177,19 +277,19 @@ pub mod com {
         P1: Parser<'a, R1>,
         P2: Parser<'a, R2>,
     {
-        move |input| {
+        move |ctx| {
             let mut result_vec = vec![];
-            let mut remaining = input;
+            let mut next_ctx = ctx;
 
             loop {
-                match last.parse(remaining) {
+                match last.parse(next_ctx) {
                     Ok((r, v)) => {
                         return Ok((r, (result_vec, v)));
                     }
-                    Err(_) => match multiple.parse(remaining) {
+                    Err(pe) => match multiple.parse(pe.ctx) {
                         Ok((r, v)) => {
                             result_vec.push(v);
-                            remaining = r;
+                            next_ctx = r;
                         }
                         Err(e) => return Err(e),
                     },
@@ -200,26 +300,41 @@ pub mod com {
 }
 pub mod par {
 
+    use crate::parse::ParseContext;
+    use crate::parse::ParseError;
+
     use super::com::*;
-    use super::BoxedParser;
     use super::ParseResult;
     use super::Parser;
 
     pub fn identity<'a>() -> impl Parser<'a, ()> {
-        move |input| Ok((input, ()))
+        move |ctx| Ok((ctx, ()))
     }
 
-    pub fn match_exact<'a>(expected: &'static str) -> impl Parser<'a, &'static str> {
-        move |input: &'a str| {
-            if let Some(stripped) = input.strip_prefix(expected) {
-                Ok((stripped, expected))
+    pub fn match_exact<'a>(expected: &'a str) -> impl Parser<'a, &'a str> {
+        move |ctx: ParseContext<'a>| {
+            let matches = ctx.remaining.get(..expected.len()).map(|s| s == expected);
+            if let Some(b) = matches {
+                if b {
+                    Ok(ctx.produce(expected.len()))
+                } else {
+                    let s = ctx.remaining[..expected.len()].to_string();
+                    Err(ParseError::from_ctx(
+                        ctx,
+                        format!("'{s}' does not match exact string {expected}",),
+                    ))
+                }
             } else {
-                Err(input)
+                let s = ctx.remaining;
+                Err(ParseError::from_ctx(
+                    ctx,
+                    format!("'{s}' does not match exact string {expected}",),
+                ))
             }
         }
     }
     // pub fn match_exact_end<'a>(expected: &'static str) -> impl Parser<'a, &'static str> {
-    //     move |input: &'a str| {
+    //     move |input: ParseContext| {
     //         if let Some(stripped) = input.strip_suffix(expected) {
     //             Ok((stripped, expected))
     //         } else {
@@ -248,44 +363,57 @@ pub mod par {
         // right(pair(match_exact("["), match_exact_end(u]u)), parser)
     }
 
-    pub fn parse_identifier<'a>(input: &'a str) -> ParseResult<'a, &'a str> {
+    pub fn parse_identifier<'a>(ctx: ParseContext<'a>) -> ParseResult<&'a str> {
         let mut matched = 0;
-        let mut chars = input.chars();
 
-        if let Some(c) = chars.next() {
+        if let Some(c) = ctx.remaining.chars().next() {
             if c.is_alphabetic() {
                 matched += 1
             } else {
-                return Err(input);
+                return Err(ParseError::from_ctx(
+                    ctx,
+                    format!("first character of identifier must be alphabetical (got {c})"),
+                ));
             }
         } else {
-            return Err(input);
+            return Err(ParseError::from_ctx(
+                ctx,
+                "expected identifier, given empty string",
+            ));
         }
 
-        for next in chars {
+        for next in ctx.remaining[1..].chars() {
             if next.is_whitespace() || next == ')' || next == ']' {
                 break;
             } else if next.is_alphanumeric() || next == '-' || next == '_' {
                 matched += 1;
             } else {
-                return Err(input);
+                return Err(ParseError::from_ctx(
+                    ctx,
+                    format!("identifier must be alphanumeric with '-' or '_' (found illegal character {next})"),
+                ));
             }
         }
 
-        Ok((&input[matched..], &input[..matched]))
+        Ok(ctx.produce(matched))
     }
 
-    pub fn parse_any_char(input: &str) -> ParseResult<'_, char> {
-        match input.chars().next() {
-            Some(next) => Ok((&input[next.len_utf8()..], next)),
-            _ => Err(input),
+    pub fn parse_any_char<'a>(ctx: ParseContext) -> ParseResult<char> {
+        match ctx.remaining.chars().next() {
+            Some(next) => Ok((ctx.produce(1).0, next)),
+            _ => Err(ParseError::from_ctx(
+                ctx,
+                "expected any char, got empty string",
+            )),
         }
     }
-
-    pub fn parse_any_char_as_str(input: &str) -> ParseResult<'_, &str> {
-        match input.get(0..1) {
-            Some(next) => Ok((&input[1..], next)),
-            _ => Err(input),
+    pub fn parse_any_char_as_str<'a>(ctx: ParseContext<'a>) -> ParseResult<&'a str> {
+        match ctx.remaining.chars().next() {
+            Some(_) => Ok(ctx.produce(1)),
+            _ => Err(ParseError::from_ctx(
+                ctx,
+                "expected any char, got empty string",
+            )),
         }
     }
 
@@ -309,12 +437,7 @@ pub mod par {
 
     // TODO should token consider spaces? probably not
     pub fn identifier<'a>() -> impl Parser<'a, &'a str> {
-        right(
-            optional_space(),
-            BoxedParser::new(move |input: &'a str| -> ParseResult<'a, &'a str> {
-                parse_identifier(input)
-            }),
-        )
+        right(optional_space(), parse_identifier)
     }
 
     pub fn operator<'a>() -> impl Parser<'a, &'a str> {
@@ -324,18 +447,24 @@ pub mod par {
     }
 
     pub fn number_literal<'a>() -> impl Parser<'a, &'a str> {
-        move |input: &'a str| {
+        move |ctx: ParseContext<'a>| {
             let mut matched = 0;
-            let mut chars = input.chars();
+            let mut chars = ctx.remaining.chars();
 
             if let Some(c) = chars.next() {
                 if c.is_digit(10) || c == '-' {
                     matched += 1
                 } else {
-                    return Err(input);
+                    return Err(ParseError::from_ctx(
+                        ctx,
+                        format!("number literal must start with a digit or '-' (got {c})"),
+                    ));
                 }
             } else {
-                return Err(input);
+                return Err(ParseError::from_ctx(
+                    ctx,
+                    format!("number literal got empty string"),
+                ));
             }
 
             let mut decimal = false;
@@ -350,30 +479,37 @@ pub mod par {
                         matched += 1;
                         decimal = true;
                     } else {
-                        return Err(input);
+                        return Err(ParseError::from_ctx(
+                            ctx,
+                            "found multiple decimal points while parsing number literal",
+                        ));
                     }
                 } else {
-                    return Err(input);
+                    return Err(ParseError::from_ctx(
+                        ctx,
+                        format!("found {next} while trying to parse number literal"),
+                    ));
                 }
             }
 
-            Ok((&input[matched..], &input[..matched]))
+            Ok(ctx.produce(matched))
         }
     }
 
     pub fn string_literal<'a>() -> impl Parser<'a, &'a str> {
         right(
             optional_space(),
-            BoxedParser::new(move |input: &'a str| -> ParseResult<'a, &'a str> {
-                match input.chars().next() {
+            move |ctx: ParseContext<'a>| -> ParseResult<&'a str> {
+                let mut chars = ctx.remaining.chars();
+                match chars.next() {
                     Some(c) => match c {
                         '"' => {
                             let mut next_escaped = false;
                             let mut closed = false;
-                            let mut end_index = 1;
+                            let mut matched = 1;
 
-                            for i in input.chars().skip(1) {
-                                end_index += 1;
+                            for i in chars {
+                                matched += 1;
                                 if next_escaped {
                                     next_escaped = false;
                                 } else if i == '\\' {
@@ -385,16 +521,25 @@ pub mod par {
                             }
 
                             if closed {
-                                Ok((&input[end_index..], &input[..end_index]))
+                                Ok(ctx.produce(matched))
                             } else {
-                                Err("unmatched pair")
+                                Err(ParseError::from_ctx(
+                                    ctx,
+                                    "string literal is missing closing \"",
+                                ))
                             }
                         }
-                        _ => Err("not a string literal"),
+                        _ => Err(ParseError::from_ctx(
+                            ctx,
+                            "not a string literal (expected opening \")",
+                        )),
                     },
-                    None => Err("not a string literal"),
+                    _ => Err(ParseError::from_ctx(
+                        ctx,
+                        "not a string literal (got empty string)",
+                    )),
                 }
-            }),
+            },
         )
     }
 }

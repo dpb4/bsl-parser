@@ -149,15 +149,15 @@ impl Keyword {
 
 fn parse_literal<'a>() -> impl Parser<'a, Expression> {
     com::map(
-        com::and_then(
+        com::apply(
             par::maybe_space_then(chain_or!(
                 par::string_literal(),
                 par::number_literal(),
                 par::identifier()
             )),
-            |b| Primitive::try_from_str(b),
+            |b| Primitive::try_from_str(&b[..]).ok_or("unable to parse primitive"),
         ),
-        |p| Expression::Literal(p),
+        Expression::Literal,
     )
 }
 
@@ -183,7 +183,7 @@ fn parse_fn_call<'a>() -> impl Parser<'a, Expression> {
             parse_fn_name(),
             par::space_separated(lazy!(parse_expression())),
         ))),
-        |(name, args)| Expression::FunctionCall((name, args)),
+        Expression::FunctionCall,
     )
 }
 
@@ -206,12 +206,12 @@ fn parse_cond<'a>() -> impl Parser<'a, Expression> {
 }
 
 fn parse_expression<'a>() -> impl Parser<'a, Expression> {
-    BoxedParser::new(chain_or!(
+    chain_or!(
         parse_literal(),
         parse_token(),
         parse_cond(),
         parse_fn_call()
-    ))
+    )
 }
 
 fn parse_const_def<'a>() -> impl Parser<'a, TopLevelExpression> {
@@ -228,21 +228,20 @@ fn parse_const_def<'a>() -> impl Parser<'a, TopLevelExpression> {
 }
 
 fn parse_fn_def<'a>() -> impl Parser<'a, TopLevelExpression> {
-    com::and_then(
+    com::apply(
         par::maybe_space_then(par::paren(com::right(
             par::match_exact("define"),
             par::maybe_space_then(com::pair(
                 par::paren(com::pair(
-                    par::identifier(),
+                    |c| parse_fn_name().parse(c),
                     com::one_plus(par::maybe_space_then(par::identifier())),
                 )),
                 par::maybe_space_then(lazy!(parse_expression())),
             )),
         ))),
         |((name, params), body)| {
-            let (_, fn_name) = parse_fn_name().parse(name)?;
             let params = params.iter().map(|s| (*s).into()).collect();
-            if let f @ FunctionName::Custom(_) = fn_name {
+            if let f @ FunctionName::Custom(_) = name {
                 Ok(TopLevelExpression::FunctionDefinition((f, params, body)))
             } else {
                 Err("name clashes with a built-in keyword")
@@ -266,37 +265,6 @@ pub enum ParseErrorType {
 }
 
 pub fn testing() {
-    //     let prog = r#"
-    // (define myconst 321)
-    // (define (foo a b c)
-    //         (cond [(check1 a) a]
-    //               [(check2 b) b]
-    //               [else
-    //                 (zoo a c b)]))
-    // "#;
-    //     // let u = "(cond [asd qwd] [(foij as) dfwe] [awd qwd dsa] [else 123])";
-    //     let _ = dbg!(parse_top_level_expression().parse(prog));
-    //     let _ = dbg!(parse_top_level_expression().parse("\n(define myconst 321)\n"));
-    // let parsed = parse_expression()
-    //     .parse("(if (or true false) 123 \"seoif\")")
-    //     .unwrap()
-    //     .1;
-    // let _ = dbg!(eval_nv_expression(parsed));
-    // let _ = dbg!(Keyword::get_keyword("*"));
-    let _ = dbg!(chain_or!(
-        par::number_literal(),
-        par::string_literal(),
-        par::identifier()
-    )
-    .parse("\"abcd\""));
-
-    let _ = dbg!(par::maybe_space_then(
-        par::string_literal(), // com::or(
-                               // par::string_literal(),
-                               // par::token()
-    )
-    .parse("\"abcd\""));
-
-    let _ = dbg!(Primitive::try_from_str("\"abcd\""));
-    let _ = dbg!(par::string_literal().parse("\"abcd\""));
+    let _ = dbg!(par::string_literal().parse("\"abcd\"".into()));
+    let _ = dbg!(parse_expression().parse("\"abcd\"".into()));
 }

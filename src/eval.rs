@@ -251,14 +251,14 @@ pub fn eval_nv_expression_with_env(
                     }
                 }
                 crate::FunctionName::Custom(name) => {
+                    let lambda = match env.get(&name)? {
+                        Primitive::Lambda(lambda) => Ok(lambda),
+                        p @ _ => Err(format!("{name} is not a function ({name} = {p})")),
+                    }?;
                     let args: Vec<Primitive> = exprs
                         .into_iter()
                         .map(|e| eval_nv_expression_with_env(e, env.clone()))
                         .collect::<Result<Vec<Primitive>, String>>()?;
-                    let lambda = match env.get(&name)? {
-                        Primitive::Lambda(lambda) => Ok(lambda),
-                        _ => Err("not a lambda"),
-                    }?;
 
                     let (arg_map, body) = apply_lambda(lambda, args)?;
                     let inner_env = EvalEnv {
