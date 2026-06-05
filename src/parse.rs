@@ -363,7 +363,7 @@ pub mod par {
         // right(pair(match_exact("["), match_exact_end(u]u)), parser)
     }
 
-    pub fn parse_identifier<'a>(ctx: ParseContext<'a>) -> ParseResult<&'a str> {
+    pub fn parse_identifier<'a>(ctx: ParseContext<'a>) -> ParseResult<'a, &'a str> {
         let mut matched = 0;
 
         if let Some(c) = ctx.remaining.chars().next() {
@@ -407,7 +407,7 @@ pub mod par {
             )),
         }
     }
-    pub fn parse_any_char_as_str<'a>(ctx: ParseContext<'a>) -> ParseResult<&'a str> {
+    pub fn parse_any_char_as_str<'a>(ctx: ParseContext<'a>) -> ParseResult<'a, &'a str> {
         match ctx.remaining.chars().next() {
             Some(_) => Ok(ctx.produce(1)),
             _ => Err(ParseError::from_ctx(
