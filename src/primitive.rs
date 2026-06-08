@@ -1,4 +1,3 @@
-
 #[derive(Debug, Clone)]
 pub struct Lambda(pub (Vec<String>, Box<super::Expression>));
 
@@ -64,10 +63,10 @@ impl Primitive {
     }
 
     pub fn is_numeric(&self) -> bool {
-        match self {
-            Primitive::Natural(_) | Primitive::Integer(_) | Primitive::Number(_) => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            Primitive::Natural(_) | Primitive::Integer(_) | Primitive::Number(_)
+        )
     }
 
     pub fn try_from_str(input: &str) -> Option<Self> {
@@ -94,19 +93,6 @@ impl Primitive {
                     Err(_) => None,
                 },
             },
-        }
-    }
-}
-
-// pub fn parse_primitive(ctx: ParseContext) -> ParseResult<Primitive> {
-//     xkk
-// }
-
-impl ConsList {
-    fn to_string(&self) -> String {
-        match self {
-            ConsList::Empty => String::from("empty"),
-            ConsList::Cons((e, r)) => format!("(cons {} {})", *e, r),
         }
     }
 }
@@ -147,7 +133,10 @@ impl Eq for ConsList {}
 
 impl std::fmt::Display for ConsList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_string())
+        match self {
+            ConsList::Empty => write!(f, "empty"),
+            ConsList::Cons((e, r)) => write!(f, "(cons {} {})", *e, r),
+        }
     }
 }
 

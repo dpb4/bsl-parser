@@ -74,16 +74,96 @@ impl<'a> ParseError<'a> {
 pub trait Parser<'a, Output> {
     fn parse(&self, ctx: ParseContext<'a>) -> ParseResult<'a, Output>;
 
-    // fn map<'a, P, F, B>(&self, map_fn: F) -> impl Parser<B>
-    // where
-    //     P: Parser<A>,
-    //     F: Fn(Output) -> B,
-    // {
-    //     move |input.into()| {
-    //         self.parse(input)
-    //             .map(|(next_ctx, result)| (next_ctx, map_fn(result)))
-    //     }
-    // }
+    fn map<F, NewOutput>(self, map_fn: F) -> impl Parser<'a, NewOutput>
+    where
+        F: Fn(Output) -> NewOutput,
+        Self: Sized,
+    {
+        com::map(self, map_fn)
+    }
+
+    fn pair<ParserOther, OutputOther>(
+        self,
+        other: ParserOther,
+    ) -> impl Parser<'a, (Output, OutputOther)>
+    where
+        ParserOther: Parser<'a, OutputOther>,
+        Self: Sized,
+    {
+        com::pair(self, other)
+    }
+
+    fn apply<F, NewOutput, S>(self, try_fn: F) -> impl Parser<'a, NewOutput>
+    where
+        S: Into<String>,
+        F: Fn(Output) -> Result<NewOutput, S>,
+        Self: Sized,
+    {
+        com::apply(self, try_fn)
+    }
+
+    fn or(self, parser2: impl Parser<'a, Output>) -> impl Parser<'a, Output>
+    where
+        Self: Sized,
+    {
+        com::or(self, parser2)
+    }
+
+    fn lazy(self) -> impl Parser<'a, Output>
+    where
+        Self: Sized,
+    {
+        com::lazy(self)
+    }
+
+    fn pred<F>(self, predicate: F) -> impl Parser<'a, Output>
+    where
+        F: Fn(&Output) -> bool,
+        Self: Sized,
+    {
+        com::pred(self, predicate)
+    }
+
+    fn ignore_then<P, OutputKept>(self, parser_kept: P) -> impl Parser<'a, OutputKept>
+    where
+        P: Parser<'a, OutputKept>,
+        Self: Sized,
+    {
+        com::right(self, parser_kept)
+    }
+
+    fn then_ignore<P, OutputIgnored>(self, parser_ignored: P) -> impl Parser<'a, Output>
+    where
+        P: Parser<'a, OutputIgnored>,
+        Self: Sized,
+    {
+        com::left(self, parser_ignored)
+    }
+
+    fn one_plus(self) -> impl Parser<'a, Vec<Output>>
+    where
+        Self: Sized,
+    {
+        com::one_plus(self)
+    }
+
+    fn zero_plus(self) -> impl Parser<'a, Vec<Output>>
+    where
+        Self: Sized,
+    {
+        com::zero_plus(self)
+    }
+
+    fn parse_until<ParserLast, OutputLast>(
+        self,
+        last: ParserLast,
+    ) -> impl Parser<'a, (Vec<Output>, OutputLast)>
+    where
+        ParserLast: Parser<'a, OutputLast>,
+        Self: Sized,
+    {
+        com::parse_a_until_b(self, last)
+    }
 }
 
 impl<'a, F, Output> Parser<'a, Output> for F
@@ -94,27 +174,6 @@ where
         self(ctx)
     }
 }
-
-// pub struct BoxedParser<Output> {
-//     parser: Box<dyn Parser<Output>>,
-// }
-
-// impl<Output> BoxedParser<Output> {
-//     pub fn new<P>(parser: P) -> Self
-//     where
-//         P: Parser<Output>,
-//     {
-//         BoxedParser {
-//             parser: Box::new(parser),
-//         }
-//     }
-// }
-
-// impl<'a, Output> Parser<Output> for BoxedParser<Output> {
-//     fn parse(&self, ctx: ParseContext) -> ParseResult<Output> {
-//         self.parser.parse(ctx)
-//     }
-// }
 
 pub mod com {
     use crate::parse::{ParseContext, ParseError};
@@ -189,6 +248,7 @@ pub mod com {
             Err(_) => parser2.parse(ctx),
         }
     }
+
     pub fn pred<'a, P, A, F>(parser: P, predicate: F) -> impl Parser<'a, A>
     where
         P: Parser<'a, A>,
@@ -205,12 +265,14 @@ pub mod com {
             e => e,
         }
     }
+
     pub fn lazy<'a, P, A>(parser: P) -> impl Parser<'a, A>
     where
         P: Parser<'a, A>,
     {
         move |s| parser.parse(s)
     }
+
     pub fn one_plus<'a, P, A>(parser: P) -> impl Parser<'a, Vec<A>>
     where
         P: Parser<'a, A>,
@@ -269,6 +331,7 @@ pub mod com {
             Ok((cur_ctx, result))
         }
     }
+
     pub fn parse_a_until_b<'a, P1, P2, R1, R2>(
         multiple: P1,
         last: P2,
@@ -351,16 +414,21 @@ pub mod par {
     where
         P: Parser<'a, A>,
     {
-        // right(pair(match_exact("("), match_exact_end(")")), parser)
-        left(right(match_exact("("), parser), match_exact(")"))
+        match_exact("(")
+            .ignore_then(parser)
+            .then_ignore(match_exact(")"))
+        // left(right(match_exact("("), parser), match_exact(")"))
     }
 
     pub fn bracket<'a, P, A>(parser: P) -> impl Parser<'a, A>
     where
         P: Parser<'a, A>,
     {
-        left(right(match_exact("["), parser), match_exact("]"))
-        // right(pair(match_exact("["), match_exact_end(u]u)), parser)
+        match_exact("[")
+            .ignore_then(parser)
+            .then_ignore(match_exact("]"))
+
+        // left(right(match_exact("["), parser), match_exact("]"))
     }
 
     pub fn parse_identifier<'a>(ctx: ParseContext<'a>) -> ParseResult<'a, &'a str> {
@@ -398,7 +466,7 @@ pub mod par {
         Ok(ctx.produce(matched))
     }
 
-    pub fn parse_any_char<'a>(ctx: ParseContext) -> ParseResult<char> {
+    pub fn parse_any_char(ctx: ParseContext) -> ParseResult<char> {
         match ctx.remaining.chars().next() {
             Some(next) => Ok((ctx.produce(1).0, next)),
             _ => Err(ParseError::from_ctx(
@@ -425,14 +493,14 @@ pub mod par {
     where
         P: Parser<'a, A>,
     {
-        right(optional_space(), parser)
+        optional_space().ignore_then(parser)
     }
 
     pub fn space_separated<'a, P, A>(parser: P) -> impl Parser<'a, Vec<A>>
     where
         P: Parser<'a, A>,
     {
-        one_plus(left(parser, optional_space()))
+        one_plus(parser.then_ignore(optional_space()))
     }
 
     // TODO should token consider spaces? probably not

@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 pub mod eval;
 pub mod parse;
 pub mod primitive;
@@ -32,55 +31,12 @@ macro_rules! lazy {
 }
 
 #[derive(Debug, Clone)]
-pub struct ParseError<'a> {
-    // TODO
-    msg: &'static str,
-    token: &'a str,
-}
-
-#[derive(Debug, Clone)]
-pub struct EvalError<'a> {
-    // TODO
-    msg: &'static str,
-    token: &'a str,
-}
-
-pub enum GenError<'a> {
-    Parsing(ParseError<'a>),
-    Evaluation(EvalError<'a>),
-}
-
-#[derive(Debug)]
-pub struct SequentialExecution<'a> {
-    expressions: Vec<Expression>,
-    bindings: HashMap<&'a str, Expression>,
-}
-
-impl<'a> SequentialExecution<'a> {
-    pub fn new_single(e: Expression) -> Self {
-        Self {
-            expressions: vec![e],
-            bindings: HashMap::new(),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
 pub enum Expression {
     Literal(Primitive),
     Identifier(String),
     FunctionCall((FunctionName, Vec<Expression>)),
     Cond((Vec<(Expression, Expression)>, Box<Expression>)),
     // Local((SequentialExecution<'a>, Box<Expression>)),
-}
-
-impl<'a> Expression {
-    fn into_owned(self) -> Self {
-        match self {
-            Self::Identifier(cs) => Self::Identifier(cs.to_owned()),
-            s => s,
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
