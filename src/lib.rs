@@ -1,28 +1,15 @@
+#![feature(try_blocks)]
+
 pub mod eval;
 pub mod parse;
 pub mod primitive;
 use parse::*;
 use primitive::*;
 
-// use crate::eval::eval_nv_expression;
-
-macro_rules! chain_or {
-    ($a:expr) => {
-        $a
-    };
-
-    ($a:expr, $b:expr $(, $rest:expr)*) => {
-        chain_or!(@acc com::or($a, $b) $(, $rest)*)
-    };
-
-    (@acc $acc:expr) => {
-        $acc
-    };
-
-    (@acc $acc:expr, $next:expr $(, $rest:expr)*) => {
-        chain_or!(@acc com::or($acc, $next) $(, $rest)*)
-    };
-}
+// TODO goals:
+// allow for comments
+// add locals
+// improve primitive api? seems messy rn
 
 macro_rules! lazy {
     ($a:expr) => {
@@ -56,6 +43,8 @@ pub enum TopLevelExpression {
 // mod
 // substring
 // length
+// define-struct
+// check-expect
 
 #[derive(Debug, Clone)]
 pub enum Keyword {
@@ -76,6 +65,10 @@ pub enum Keyword {
     CheckExpect,
     First,
     Rest,
+    Mod,
+    DefineStruct,
+    Length,
+    Substring,
 }
 
 impl Keyword {
@@ -98,33 +91,33 @@ impl Keyword {
             "check-expect" => Some(Self::CheckExpect),
             "first" => Some(Self::First),
             "rest" => Some(Self::Rest),
+            "mod" => Some(Self::Mod),
+            "define-struct" => Some(Self::DefineStruct),
+            "length" => Some(Self::Length),
+            "substring" => Some(Self::Substring),
             _ => None,
         }
     }
 }
 
 fn parse_literal<'a>() -> impl Parser<'a, Expression> {
-    com::map(
-        com::apply(
-            par::maybe_space_then(chain_or!(
-                par::string_literal(),
-                par::number_literal(),
-                par::identifier()
-            )),
-            |b| Primitive::try_from_str(b).ok_or("unable to parse primitive"),
-        ),
-        Expression::Literal,
+    let possible_literals = par::string_literal()
+        .or(par::number_literal())
+        .or(par::identifier());
+
+    par::maybe_space_then(
+        possible_literals
+            .apply(|b| Primitive::try_from_str(b).ok_or("unable to parse primitive"))
+            .map(Expression::Literal),
     )
 }
 
 fn parse_token<'a>() -> impl Parser<'a, Expression> {
-    com::map(par::identifier(), |t| {
-        Expression::Identifier(String::from(t))
-    })
+    par::identifier().map(|t| Expression::Identifier(String::from(t)))
 }
 
 fn parse_fn_name<'a>() -> impl Parser<'a, FunctionName> {
-    com::map(com::or(par::identifier(), par::operator()), |s| {
+    par::identifier().or(par::operator()).map(|s| {
         if let Some(k) = Keyword::get_keyword(s) {
             FunctionName::BuiltIn(k)
         } else {
@@ -134,40 +127,38 @@ fn parse_fn_name<'a>() -> impl Parser<'a, FunctionName> {
 }
 
 fn parse_fn_call<'a>() -> impl Parser<'a, Expression> {
-    com::map(
-        par::maybe_space_then(par::paren(com::pair(
-            parse_fn_name(),
-            par::space_separated(lazy!(parse_expression())),
-        ))),
-        Expression::FunctionCall,
+    par::maybe_space_then(
+        par::paren(parse_fn_name().then(par::space_separated(lazy!(parse_expression()))))
+            .map(Expression::FunctionCall),
     )
 }
 
 fn parse_cond<'a>() -> impl Parser<'a, Expression> {
-    let single_case = par::maybe_space_then(par::bracket(com::pair(
-        lazy!(parse_expression()),
-        par::maybe_space_then(lazy!(parse_expression())),
-    )));
-    let else_case = par::maybe_space_then(par::bracket(com::right(
-        par::match_exact("else"), // TODO add space after else
-        par::maybe_space_then(lazy!(parse_expression())),
-    )));
-    com::map(
-        par::paren(com::right(
-            par::match_exact("cond"), // TODO add space after cond
-            par::maybe_space_then(com::parse_a_until_b(single_case, else_case)),
-        )),
-        |(cases, else_case)| Expression::Cond((cases, Box::new(else_case))),
+    let single_case = par::maybe_space_then(par::bracket(
+        lazy!(parse_expression())
+            .then_ignore(par::optional_space())
+            .then(lazy!(parse_expression())),
+    ));
+
+    let else_case = par::maybe_space_then(par::bracket(
+        par::match_exact("else")
+            .ignore_then(par::optional_space())
+            .ignore_then(lazy!(parse_expression())),
+    ));
+
+    par::paren(
+        par::match_exact("cond")
+            .ignore_then(par::optional_space())
+            .ignore_then(com::parse_a_until_b(single_case, else_case)),
     )
+    .map(|(cases, else_case)| Expression::Cond((cases, Box::new(else_case))))
 }
 
 fn parse_expression<'a>() -> impl Parser<'a, Expression> {
-    chain_or!(
-        parse_literal(),
-        parse_token(),
-        parse_cond(),
-        parse_fn_call()
-    )
+    parse_literal()
+        .or(parse_token())
+        .or(parse_cond())
+        .or(parse_fn_call())
 }
 
 fn parse_const_def<'a>() -> impl Parser<'a, TopLevelExpression> {
@@ -213,14 +204,46 @@ pub fn parse_nv_expression<'a>() -> impl Parser<'a, TopLevelExpression> {
 }
 
 pub fn parse_top_level_expression<'a>() -> impl Parser<'a, TopLevelExpression> {
-    chain_or!(parse_const_def(), parse_fn_def(), parse_nv_expression())
-}
-
-pub enum ParseErrorType {
-    ArgumentCount(u8, u8, &'static str),
+    parse_const_def()
+        .or(parse_fn_def())
+        .or(parse_nv_expression())
 }
 
 pub fn testing() {
     let _ = dbg!(par::string_literal().parse("\"abcd\"".into()));
     let _ = dbg!(parse_expression().parse("\"abcd\"".into()));
+}
+#[cfg(test)]
+mod tests {
+    use crate::*;
+    use core::assert_matches;
+
+    fn expr_lit_empty(s: &str) {
+        assert_matches!(
+            parse_literal().parse(s.into()),
+            Ok((_, Expression::Literal(Primitive::List(ConsList::Empty))))
+        );
+    }
+
+    #[test]
+    fn primitive_empty() {
+        // let s = "empty";
+        // assert_matches!(
+        //     parse_literal().parse(s.into()),
+        //     Ok((_, Expression::Literal(Primitive::List(ConsList::Empty))))
+        // );
+        // let s = " empty";
+        // assert_matches!(
+        //     parse_literal().parse(s.into()),
+        //     Ok((_, Expression::Literal(Primitive::List(ConsList::Empty))))
+        // );
+        // let s = " empty ";
+        // assert_matches!(
+        //     parse_literal().parse(s.into()),
+        //     Ok((_, Expression::Literal(Primitive::List(ConsList::Empty))))
+        // );
+        expr_lit_empty("empty");
+        expr_lit_empty(" empty");
+        expr_lit_empty(" empty ");
+    }
 }

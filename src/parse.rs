@@ -82,7 +82,16 @@ pub trait Parser<'a, Output> {
         com::map(self, map_fn)
     }
 
-    fn pair<ParserOther, OutputOther>(
+    fn map_with_context<F, B, S>(self, map_fn: F, error_context: S) -> impl Parser<'a, B>
+    where
+        S: Into<String> + Clone,
+        F: Fn(Output) -> B,
+        Self: Sized,
+    {
+        com::map_with_context(self, map_fn, error_context)
+    }
+
+    fn then<ParserOther, OutputOther>(
         self,
         other: ParserOther,
     ) -> impl Parser<'a, (Output, OutputOther)>
@@ -203,6 +212,25 @@ pub mod com {
             parser
                 .parse(ctx)
                 .map(|(next_ctx, result)| (next_ctx, map_fn(result)))
+        }
+    }
+
+    pub fn map_with_context<'a, P, F, A, B, S>(
+        parser: P,
+        map_fn: F,
+        error_context: S,
+    ) -> impl Parser<'a, B>
+    where
+        S: Into<String> + Clone,
+        P: Parser<'a, A>,
+        F: Fn(A) -> B,
+    {
+        move |ctx| {
+            match parser.parse(ctx) {
+                Ok((next_ctx, result)) => Ok((next_ctx, map_fn(result))),
+                Err(p) => Err(p.append_msg(error_context.clone())),
+            }
+            // .map(|(next_ctx, result)| (next_ctx, map_fn(result)))
         }
     }
 

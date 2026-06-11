@@ -18,6 +18,25 @@ pub enum ConsList {
     Cons((Box<Primitive>, Box<ConsList>)),
 }
 
+impl<T: Iterator<Item = Primitive>> From<T> for ConsList {
+    fn from(mut value: T) -> Self {
+        match value.next() {
+            Some(v) => Self::Cons((Box::new(v), Box::new(Self::from(value)))),
+            None => Self::Empty,
+        }
+    }
+}
+
+// TODO optimize
+impl ConsList {
+    pub fn length(&self) -> u32 {
+        match self {
+            ConsList::Empty => 0,
+            ConsList::Cons((_, r)) => 1 + r.length(),
+        }
+    }
+}
+
 impl Primitive {
     pub fn coerce_f32(&self) -> Result<f32, String> {
         match *self {
@@ -158,19 +177,19 @@ impl std::fmt::Display for Primitive {
         )
     }
 }
-#[derive(Debug)]
-pub enum EvalErrType {
-    TypeMismatch(Primitive),
-    TypeCoercion(Primitive),
-}
+// #[derive(Debug)]
+// pub enum EvalErrType {
+//     TypeMismatch(Primitive),
+//     TypeCoercion(Primitive),
+// }
 
-#[derive(Debug)]
-pub struct EvalErr {
-    err_type: EvalErrType,
-    msg: String,
-    line_num: u32,
-    col_num: u32,
-}
+// #[derive(Debug)]
+// pub struct EvalErr {
+//     err_type: EvalErrType,
+//     msg: String,
+//     line_num: u32,
+//     col_num: u32,
+// }
 
 pub fn add(a: Primitive, b: Primitive) -> Result<Primitive, String> {
     if !a.is_numeric() {
@@ -254,6 +273,13 @@ pub fn divide(a: Primitive, b: Primitive) -> Result<Primitive, String> {
     }
 }
 
+pub fn mod_(a: Primitive, b: Primitive) -> Result<Primitive, String> {
+    match &(a, b) {
+        (Primitive::Natural(n), Primitive::Natural(d)) => Ok(Primitive::Natural(n % d)),
+        (a2, b2) => Err(format!("`mod` expects two Naturals, got {a2} and {b2}")),
+    }
+}
+
 pub fn and(a: Primitive, b: Primitive) -> Result<Primitive, String> {
     match (&a, b) {
         (Primitive::Boolean(a), Primitive::Boolean(b)) => Ok(Primitive::Boolean(*a && b)),
@@ -278,20 +304,30 @@ pub fn not(a: Primitive) -> Result<Primitive, String> {
 pub fn cons(e: Primitive, r: Primitive) -> Result<Primitive, String> {
     match r {
         Primitive::List(cl) => Ok(Primitive::List(ConsList::Cons((Box::new(e), Box::new(cl))))),
-        _ => Err(todo!()),
+        _ => Err(format!(
+            "second argument to `cons` must be a List, given {r}"
+        )),
     }
 }
 
 pub fn rest(l: Primitive) -> Result<Primitive, String> {
     match l {
         Primitive::List(ConsList::Cons((_, r))) => Ok(Primitive::List(*r)),
-        _ => Err(todo!()),
+        _ => Err(format!("`rest` expects a non-empty List, given {l}")),
     }
 }
 
 pub fn first(l: Primitive) -> Result<Primitive, String> {
     match l {
         Primitive::List(ConsList::Cons((e, _))) => Ok(*e),
-        _ => Err(todo!()),
+        _ => Err(format!("`first` expects a non-empty List, given {l}")),
+    }
+}
+
+pub fn length(l: Primitive) -> Result<Primitive, String> {
+    match l {
+        Primitive::List(c) => Ok(Primitive::Natural(c.length())),
+        Primitive::String(s) => Ok(Primitive::Natural(s.len() as u32)),
+        _ => Err(format!("`length` expects a List or String, given {l}")),
     }
 }

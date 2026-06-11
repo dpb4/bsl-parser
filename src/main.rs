@@ -7,7 +7,6 @@ use bsl_parser::{
 };
 fn main() {
     let stdin = std::io::stdin();
-    bsl_parser::testing();
     let mut env = Rc::new(EvalEnv::new());
     for line in stdin.lock().lines() {
         // println!("> ");

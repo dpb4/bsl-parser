@@ -16,12 +16,25 @@ macro_rules! check_arg_len {
     ($exprs:expr, $name:expr, $count:expr) => {
         if $exprs.len() != $count {
             return Err(format!(
-                "`{n}` expects $count arguments, given {e}",
+                "`{n}` expects {c} arguments, given {e}",
                 n = $name,
+                c = $count,
                 e = $exprs.len()
             ));
         }
     };
+}
+
+macro_rules! check_and_unpack {
+    ($exprs:expr, $fn_name:expr, $count:expr, $env:expr=> $($name:ident),+ $(,)?) => {
+        check_arg_len!($exprs, $fn_name, $count);
+        let mut __x = $exprs
+            .into_iter()
+            .map(|e| eval_nv_expression_with_env(e, $env.clone()));
+        $(
+            let $name = __x.next().unwrap();
+        )+
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -168,92 +181,78 @@ pub fn eval_nv_expression_with_env(
                             }
                         }
                         K::Plus => {
-                            check_arg_len!(exprs, "(+)", 2);
-                            let x = exprs
-                                .into_iter()
-                                .map(|e| eval_nv_expression_with_env(e, env.clone()));
-                            unpack_args!(x => a, b);
+                            check_and_unpack!(exprs, "(+)", 2, env => a, b);
 
                             primitive::add(a?, b?)
                         }
                         K::Minus => {
-                            check_arg_len!(exprs, "(-)", 2);
-                            let x = exprs
-                                .into_iter()
-                                .map(|e| eval_nv_expression_with_env(e, env.clone()));
-                            unpack_args!(x => a, b);
+                            check_and_unpack!(exprs, "(-)", 2, env => a, b);
 
                             primitive::sub(a?, b?)
                         }
                         K::Times => {
-                            check_arg_len!(exprs, "(*)", 2);
-                            let x = exprs
-                                .into_iter()
-                                .map(|e| eval_nv_expression_with_env(e, env.clone()));
-                            unpack_args!(x => a, b);
+                            check_and_unpack!(exprs, "(*)", 2, env => a, b);
 
                             primitive::mult(a?, b?)
                         }
 
                         K::Divide => {
-                            check_arg_len!(exprs, "(/)", 2);
-                            let x = exprs
-                                .into_iter()
-                                .map(|e| eval_nv_expression_with_env(e, env.clone()));
-                            unpack_args!(x => a, b);
+                            check_and_unpack!(exprs, "(/)", 2, env => a, b);
 
                             primitive::divide(a?, b?)
                         }
                         K::Equals => {
-                            check_arg_len!(exprs, "(/)", 2);
-                            let x = exprs
-                                .into_iter()
-                                .map(|e| eval_nv_expression_with_env(e, env.clone()));
-                            unpack_args!(x => a, b);
+                            check_and_unpack!(exprs, "(=)", 2, env => a, b);
 
                             Ok(Primitive::Boolean(a? == b?))
                         }
                         K::Not => {
-                            check_arg_len!(exprs, "not", 1);
-                            let x = exprs
-                                .into_iter()
-                                .map(|e| eval_nv_expression_with_env(e, env.clone()));
-                            unpack_args!(x => a);
+                            check_and_unpack!(exprs, "not", 1, env => a);
 
                             primitive::not(a?)
                         }
                         K::Cons => {
-                            check_arg_len!(exprs, "cons", 2);
-                            let x = exprs
-                                .into_iter()
-                                .map(|e| eval_nv_expression_with_env(e, env.clone()));
-                            unpack_args!(x => a, b);
+                            check_and_unpack!(exprs, "cons", 2, env => a, b);
 
                             primitive::cons(a?, b?)
                         }
                         K::First => {
-                            check_arg_len!(exprs, "first", 1);
-                            let x = exprs
-                                .into_iter()
-                                .map(|e| eval_nv_expression_with_env(e, env.clone()));
-                            unpack_args!(x => a);
+                            check_and_unpack!(exprs, "first", 1, env => a);
 
                             primitive::first(a?)
                         }
                         K::Rest => {
-                            check_arg_len!(exprs, "rest", 1);
-                            let x = exprs
-                                .into_iter()
-                                .map(|e| eval_nv_expression_with_env(e, env.clone()));
-                            unpack_args!(x => a);
+                            check_and_unpack!(exprs, "rest", 1, env => a);
 
                             primitive::rest(a?)
                         }
-                        K::Cond => todo!(),
-                        K::Define => todo!(),
+                        K::List => {
+                            let args = exprs
+                                .into_iter()
+                                .map(|e| eval_nv_expression_with_env(e, env.clone()))
+                                .collect::<Result<Vec<Primitive>, _>>();
+
+                            Ok(primitive::Primitive::List(primitive::ConsList::from(
+                                args?.into_iter(),
+                            )))
+                        }
+
+                        K::Length => {
+                            check_and_unpack!(exprs, "length", 1, env => a);
+
+                            primitive::length(a?)
+                        }
+                        K::Mod => {
+                            check_and_unpack!(exprs, "mod", 2, env => a, b);
+
+                            // TODO can't short circuit with ? operator if I want good error messages; need better soln
+                            primitive::mod_(a?, b?)
+                        }
+                        K::Cond | K::Define => unreachable!(),
                         K::Local => todo!(),
-                        K::List => todo!(),
                         K::CheckExpect => todo!(),
+                        K::DefineStruct => todo!(),
+                        K::Substring => todo!(),
                     }
                 }
                 crate::FunctionName::Custom(name) => {
