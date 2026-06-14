@@ -9,9 +9,10 @@ use bsl_parser::{
     *,
 };
 fn main() {
+    // testing();
+
     let args: Vec<String> = std::env::args().collect();
     let mut env = Rc::new(EvalEnv::new());
-    // testing();
     if args.len() > 1 {
         let mut file = if let Ok(f) = std::fs::File::open(&args[1]) {
             f
@@ -26,6 +27,7 @@ fn main() {
         if let Err(e) = parsed {
             println!("parsing error: \n{e}");
         } else {
+            dbg!(&parsed);
             for d in parsed.unwrap().1 {
                 match eval_top_level_expression_with_env(d, env.clone()) {
                     Ok((output, new_env)) => {

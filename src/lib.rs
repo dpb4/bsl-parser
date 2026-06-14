@@ -4,11 +4,10 @@ pub mod eval;
 pub mod parse;
 pub mod primitive;
 use parse::*;
+use phf::phf_map;
 use primitive::*;
-
 // TODO goals:
 // allow for comments
-// add locals
 // improve primitive api? seems messy rn
 
 macro_rules! lazy {
@@ -45,13 +44,9 @@ pub enum TopLevelExpression {
 }
 
 // TODO:
-// mod
-// substring
-// length
 // define-struct
 // check-expect
 
-// TODO make a lazy-static hashmap for this
 #[derive(Debug, Clone)]
 pub enum Keyword {
     Define,
@@ -86,41 +81,42 @@ pub enum Keyword {
     PredLambda,
 }
 
+static KEYWORDS: phf::Map<&'static str, Keyword> = phf_map! {
+    "define" => Keyword::Define,
+    "if" => Keyword::If,
+    "cond" => Keyword::Cond,
+    "local" => Keyword::Local,
+    "=" => Keyword::Equals,
+    "+" | "add" => Keyword::Plus,
+    "-" | "sub" => Keyword::Minus,
+    "*" | "mult" => Keyword::Times,
+    "/" | "div" => Keyword::Divide,
+    "and" => Keyword::And,
+    "or" => Keyword::Or,
+    "not" => Keyword::Not,
+    "list" => Keyword::List,
+    "cons" => Keyword::Cons,
+    "check-expect" => Keyword::CheckExpect,
+    "first" => Keyword::First,
+    "rest" => Keyword::Rest,
+    "mod" => Keyword::Mod,
+    "define-struct" => Keyword::DefineStruct,
+    "length" => Keyword::Length,
+    "substring" => Keyword::Substring,
+    "zero?" => Keyword::PredZero,
+    "natural?" => Keyword::PredNatural,
+    "integer?" => Keyword::PredInteger,
+    "number?" => Keyword::PredNumber,
+    "string?" => Keyword::PredString,
+    "empty?" => Keyword::PredEmpty,
+    "cons?" => Keyword::PredCons,
+    "list?" => Keyword::PredList,
+    "lambda?" => Keyword::PredLambda,
+};
+
 impl Keyword {
     fn get_keyword(s: &str) -> Option<Self> {
-        match &s.to_lowercase()[..] {
-            "define" => Some(Self::Define),
-            "if" => Some(Self::If),
-            "cond" => Some(Self::Cond),
-            "local" => Some(Self::Local),
-            "=" => Some(Self::Equals),
-            "+" | "add" => Some(Self::Plus),
-            "-" | "sub" => Some(Self::Minus),
-            "*" | "mult" => Some(Self::Times),
-            "/" | "div" => Some(Self::Divide),
-            "and" => Some(Self::And),
-            "or" => Some(Self::Or),
-            "not" => Some(Self::Not),
-            "list" => Some(Self::List),
-            "cons" => Some(Self::Cons),
-            "check-expect" => Some(Self::CheckExpect),
-            "first" => Some(Self::First),
-            "rest" => Some(Self::Rest),
-            "mod" => Some(Self::Mod),
-            "define-struct" => Some(Self::DefineStruct),
-            "length" => Some(Self::Length),
-            "substring" => Some(Self::Substring),
-            "zero?" => Some(Self::PredZero),
-            "natural?" => Some(Self::PredNatural),
-            "integer?" => Some(Self::PredInteger),
-            "number?" => Some(Self::PredNumber),
-            "string?" => Some(Self::PredString),
-            "empty?" => Some(Self::PredEmpty),
-            "cons?" => Some(Self::PredCons),
-            "list?" => Some(Self::PredList),
-            "lambda?" => Some(Self::PredLambda),
-            _ => None,
-        }
+        KEYWORDS.get(&s.to_lowercase()).cloned()
     }
 }
 
@@ -246,42 +242,24 @@ pub fn parse_top_level_expression<'a>() -> impl Parser<'a, TopLevelExpression> {
         .or(parse_nv_expression())
 }
 
-// pub fn testing() {
-//     //     let _ = dbg!(parse_fn_def().parse(
-//     //         r"
-//     // (define (fib n)
-//     //     (cond [(= n 0) 1]
-//     //           [(= n 1) 1]
-//     //           [else
-//     //             (+ (fib (- n 1)) (fib (- n 2)))]))"
-//     //             .into()
-//     //     ));
-//     let s = r"(cond [(= n 0) 1]
-//     [(= n 1) 1]
-//     [else
-//       (+ (fib (- n 1)) (fib (- n 2)))])";
-//     let single_case = par::maybe_space_then(par::bracket(
-//         lazy!(parse_expression())
-//             .then_ignore(par::optional_space())
-//             .then(lazy!(parse_expression())),
-//     ));
+pub fn testing() {
+    //     let _ = dbg!(parse_fn_def().parse(
+    //         r"
+    // (define (fib n)
+    //     (cond [(= n 0) 1]
+    //           [(= n 1) 1]
+    //           [else
+    //             (+ (fib (- n 1)) (fib (- n 2)))]))"
+    //             .into()
+    //     ));
+    let s = r"(define (map fn list)
+  (cond [(empty? list) empty] ;hi 
+        [else
+          (cons (fn (first list))
+                (map fn (rest list)))]))";
 
-//     let else_case = par::maybe_space_then(par::bracket(
-//         par::match_exact("else")
-//             .ignore_then(par::optional_space())
-//             .ignore_then(lazy!(parse_expression())),
-//     ));
-
-//     // let _ = dbg!(par::paren(
-//     //     par::match_exact("cond").ignore_then(par::optional_space()) //         .ignore_then(com::parse_a_until_b(single_case, else_case)),
-//     // )
-//     // .parse(s.into()));
-//     // let _ = dbg!(
-//     //     par::maybe_space_then(com::parse_a_until_b(single_case, else_case))
-//     //         .parse(" [(= n 1) 1]\n    [(= n 0) 1]\n    [else\n      3]".into())
-//     // );
-//     let _ = dbg!(parse_cond().parse(s.into()));
-// }
+    let _ = dbg!(parse_top_level_expression().parse(s.into()));
+}
 #[cfg(test)]
 mod tests {
     use crate::*;

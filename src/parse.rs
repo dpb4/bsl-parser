@@ -481,7 +481,7 @@ pub mod par {
         }
 
         for next in ctx.remaining[1..].chars() {
-            if next.is_whitespace() || next == ')' || next == ']' {
+            if next.is_whitespace() || next == ')' || next == ']' || next == ';' {
                 break;
             } else if next.is_alphanumeric() || next == '-' || next == '_' || next == '?' {
                 matched += 1;
@@ -515,8 +515,33 @@ pub mod par {
         }
     }
 
-    pub fn optional_space<'a>() -> impl Parser<'a, Vec<char>> {
-        zero_plus(whitespace_char())
+    pub fn space_or_comment<'a>() -> impl Parser<'a, ()> {
+        move |ctx: ParseContext<'a>| {
+            let mut matched = 0;
+            let mut in_comment = false;
+
+            for next in ctx.remaining.chars() {
+                if in_comment {
+                    if next == '\n' {
+                        in_comment = false;
+                    }
+                } else if !next.is_whitespace() {
+                    if next == ';' {
+                        in_comment = true;
+                    } else {
+                        break;
+                    }
+                }
+                matched += 1;
+            }
+            Ok((ctx.produce(matched).0, ()))
+        }
+    }
+
+    // TODO clean this up, remove redudant calls to this fn
+    pub fn optional_space<'a>() -> impl Parser<'a, ()> {
+        // zero_plus(whitespace_char())
+        space_or_comment()
     }
 
     pub fn maybe_space_then<'a, P, A>(parser: P) -> impl Parser<'a, A>

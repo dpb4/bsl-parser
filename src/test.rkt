@@ -9,7 +9,7 @@
      (* b b)))
 
 (define (map fn list)
-  (cond [(empty? list) empty]
+  (cond [(empty? list) empty] ;hi
         [else
           (cons (fn (first list))
                 (map fn (rest list)))]))
