@@ -38,6 +38,47 @@ impl ConsList {
 }
 
 impl Primitive {
+    pub fn pred_zero(&self) -> Self {
+        if self.is_numeric() {
+            // TODO is this bad
+            Primitive::Boolean(self.coerce_f32().unwrap() == 0.0)
+        } else {
+            Primitive::Boolean(false)
+        }
+    }
+
+    pub fn pred_natural(&self) -> Self {
+        Primitive::Boolean(matches!(self, Primitive::Natural(_)))
+    }
+
+    pub fn pred_integer(&self) -> Self {
+        Primitive::Boolean(matches!(self, Primitive::Integer(_)))
+    }
+
+    pub fn pred_number(&self) -> Self {
+        Primitive::Boolean(matches!(self, Primitive::Number(_)))
+    }
+
+    pub fn pred_string(&self) -> Self {
+        Primitive::Boolean(matches!(self, Primitive::String(_)))
+    }
+
+    pub fn pred_list(&self) -> Self {
+        Primitive::Boolean(matches!(self, Primitive::List(_)))
+    }
+
+    pub fn pred_empty(&self) -> Self {
+        Primitive::Boolean(matches!(self, Primitive::List(ConsList::Empty)))
+    }
+
+    pub fn pred_cons(&self) -> Self {
+        Primitive::Boolean(matches!(self, Primitive::List(ConsList::Cons(_))))
+    }
+
+    pub fn pred_lambda(&self) -> Self {
+        Primitive::Boolean(matches!(self, Primitive::Lambda(_)))
+    }
+
     pub fn coerce_f32(&self) -> Result<f32, String> {
         match *self {
             Primitive::Natural(n) => Ok(n as f32),

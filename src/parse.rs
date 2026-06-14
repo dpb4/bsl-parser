@@ -356,7 +356,7 @@ pub mod com {
                 }
             }
 
-            Ok((cur_ctx, result))
+            Ok(((cur_ctx), result))
         }
     }
 
@@ -368,16 +368,18 @@ pub mod com {
         P1: Parser<'a, R1>,
         P2: Parser<'a, R2>,
     {
-        move |ctx| {
+        move |ctx: ParseContext<'a>| {
             let mut result_vec = vec![];
             let mut next_ctx = ctx;
 
             loop {
+                let attempt_ctx = next_ctx.clone();
+
                 match last.parse(next_ctx) {
                     Ok((r, v)) => {
                         return Ok((r, (result_vec, v)));
                     }
-                    Err(pe) => match multiple.parse(pe.ctx) {
+                    Err(_) => match multiple.parse(attempt_ctx) {
                         Ok((r, v)) => {
                             result_vec.push(v);
                             next_ctx = r;
@@ -481,12 +483,12 @@ pub mod par {
         for next in ctx.remaining[1..].chars() {
             if next.is_whitespace() || next == ')' || next == ']' {
                 break;
-            } else if next.is_alphanumeric() || next == '-' || next == '_' {
+            } else if next.is_alphanumeric() || next == '-' || next == '_' || next == '?' {
                 matched += 1;
             } else {
                 return Err(ParseError::from_ctx(
                     ctx,
-                    format!("identifier must be alphanumeric with '-' or '_' (found illegal character {next})"),
+                    format!("identifier must be alphanumeric with '-' or '_' or '?' (found illegal character `{next}`)"),
                 ));
             }
         }

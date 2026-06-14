@@ -248,11 +248,55 @@ pub fn eval_nv_expression_with_env(
                             // TODO can't short circuit with ? operator if I want good error messages; need better soln
                             primitive::mod_(a?, b?)
                         }
-                        K::Cond | K::Define => unreachable!(),
-                        K::Local => todo!(),
+                        K::Cond | K::Define | K::Local => unreachable!(),
                         K::CheckExpect => todo!(),
                         K::DefineStruct => todo!(),
                         K::Substring => todo!(),
+                        K::PredZero => {
+                            check_and_unpack!(exprs, "zero?", 1, env => a);
+
+                            Ok(a?.pred_zero())
+                        }
+                        K::PredNatural => {
+                            check_and_unpack!(exprs, "natural?", 1, env => a);
+
+                            Ok(a?.pred_natural())
+                        }
+                        K::PredInteger => {
+                            check_and_unpack!(exprs, "integer?", 1, env => a);
+
+                            Ok(a?.pred_integer())
+                        }
+                        K::PredNumber => {
+                            check_and_unpack!(exprs, "number?", 1, env => a);
+
+                            Ok(a?.pred_number())
+                        }
+                        K::PredString => {
+                            check_and_unpack!(exprs, "string?", 1, env => a);
+
+                            Ok(a?.pred_string())
+                        }
+                        K::PredEmpty => {
+                            check_and_unpack!(exprs, "empty?", 1, env => a);
+
+                            Ok(a?.pred_empty())
+                        }
+                        K::PredCons => {
+                            check_and_unpack!(exprs, "cons?", 1, env => a);
+
+                            Ok(a?.pred_cons())
+                        }
+                        K::PredList => {
+                            check_and_unpack!(exprs, "list?", 1, env => a);
+
+                            Ok(a?.pred_list())
+                        }
+                        K::PredLambda => {
+                            check_and_unpack!(exprs, "lambda?", 1, env => a);
+
+                            Ok(a?.pred_lambda())
+                        }
                     }
                 }
                 crate::FunctionName::Custom(name) => {
@@ -274,6 +318,21 @@ pub fn eval_nv_expression_with_env(
                 }
             }
         }
+        Expression::Local((defns, body)) => {
+            let mut local_env = env.clone();
+
+            for d in defns {
+                match eval_top_level_expression_with_env(d, local_env.clone()) {
+                    Ok((_, env)) => {
+                        local_env = env;
+                    }
+                    Err(e) => {
+                        return Err(format!("error while evaluating local definitions:\n{e}"));
+                    }
+                }
+            }
+            eval_nv_expression_with_env(*body, local_env)
+        }
     }
 }
 
@@ -282,7 +341,7 @@ pub fn eval_top_level_expression(
 ) -> Result<(Option<Primitive>, Rc<EvalEnv>), String> {
     eval_top_level_expression_with_env(expr, Rc::new(EvalEnv::new()))
 }
-
+// TODO sort into defines, expressions, check-expects
 pub fn eval_top_level_expression_with_env(
     expr: TopLevelExpression,
     env: Rc<EvalEnv>,
@@ -301,12 +360,13 @@ pub fn eval_top_level_expression_with_env(
             Ok((None, Rc::new(env2)))
         }
         TopLevelExpression::FunctionDefinition((FunctionName::BuiltIn(n), _, _)) => Err(format!(
-            "cannot define a function with name {:?}, that is a built in function",
+            "cannot define a function called {:?}, a built in function already exists with that name",
             n
         )),
         TopLevelExpression::NonVoidExpression(expr) => {
             Ok((Some(eval_nv_expression_with_env(expr, env.clone())?), env))
         }
+        TopLevelExpression::StructDefinition(_) => todo!(),
     }
 }
 

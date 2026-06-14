@@ -23,8 +23,12 @@ pub enum Expression {
     Identifier(String),
     FunctionCall((FunctionName, Vec<Expression>)),
     Cond((Vec<(Expression, Expression)>, Box<Expression>)),
-    // Local((SequentialExecution<'a>, Box<Expression>)),
+    Local((Vec<TopLevelExpression>, Box<Expression>)),
 }
+
+// TODO replace FunctionName::Custom with this type
+#[derive(Debug, Clone)]
+pub struct ValidIdentifier(String);
 
 #[derive(Debug, Clone)]
 pub enum FunctionName {
@@ -32,11 +36,12 @@ pub enum FunctionName {
     Custom(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TopLevelExpression {
     ConstantDefinition((String, Expression)),
     FunctionDefinition((FunctionName, Vec<String>, Expression)),
     NonVoidExpression(Expression),
+    StructDefinition((FunctionName, Vec<FunctionName>)),
 }
 
 // TODO:
@@ -46,6 +51,7 @@ pub enum TopLevelExpression {
 // define-struct
 // check-expect
 
+// TODO make a lazy-static hashmap for this
 #[derive(Debug, Clone)]
 pub enum Keyword {
     Define,
@@ -69,6 +75,15 @@ pub enum Keyword {
     DefineStruct,
     Length,
     Substring,
+    PredZero,
+    PredNatural,
+    PredInteger,
+    PredNumber,
+    PredString,
+    PredEmpty,
+    PredCons,
+    PredList,
+    PredLambda,
 }
 
 impl Keyword {
@@ -95,6 +110,15 @@ impl Keyword {
             "define-struct" => Some(Self::DefineStruct),
             "length" => Some(Self::Length),
             "substring" => Some(Self::Substring),
+            "zero?" => Some(Self::PredZero),
+            "natural?" => Some(Self::PredNatural),
+            "integer?" => Some(Self::PredInteger),
+            "number?" => Some(Self::PredNumber),
+            "string?" => Some(Self::PredString),
+            "empty?" => Some(Self::PredEmpty),
+            "cons?" => Some(Self::PredCons),
+            "list?" => Some(Self::PredList),
+            "lambda?" => Some(Self::PredLambda),
             _ => None,
         }
     }
@@ -154,11 +178,24 @@ fn parse_cond<'a>() -> impl Parser<'a, Expression> {
     .map(|(cases, else_case)| Expression::Cond((cases, Box::new(else_case))))
 }
 
+fn parse_local<'a>() -> impl Parser<'a, Expression> {
+    par::paren(
+        par::match_exact("local")
+            .ignore_then(par::optional_space())
+            .ignore_then(lazy!(par::bracket(com::zero_plus(
+                parse_top_level_expression()
+            ))
+            .then_ignore(par::optional_space())
+            .then(parse_expression()))),
+    )
+    .map(|(local_defns, body)| Expression::Local((local_defns, Box::new(body))))
+}
 fn parse_expression<'a>() -> impl Parser<'a, Expression> {
     parse_literal()
         .or(parse_token())
         .or(parse_cond())
         .or(parse_fn_call())
+    // .or(parse_local())
 }
 
 fn parse_const_def<'a>() -> impl Parser<'a, TopLevelExpression> {
@@ -209,10 +246,42 @@ pub fn parse_top_level_expression<'a>() -> impl Parser<'a, TopLevelExpression> {
         .or(parse_nv_expression())
 }
 
-pub fn testing() {
-    let _ = dbg!(par::string_literal().parse("\"abcd\"".into()));
-    let _ = dbg!(parse_expression().parse("\"abcd\"".into()));
-}
+// pub fn testing() {
+//     //     let _ = dbg!(parse_fn_def().parse(
+//     //         r"
+//     // (define (fib n)
+//     //     (cond [(= n 0) 1]
+//     //           [(= n 1) 1]
+//     //           [else
+//     //             (+ (fib (- n 1)) (fib (- n 2)))]))"
+//     //             .into()
+//     //     ));
+//     let s = r"(cond [(= n 0) 1]
+//     [(= n 1) 1]
+//     [else
+//       (+ (fib (- n 1)) (fib (- n 2)))])";
+//     let single_case = par::maybe_space_then(par::bracket(
+//         lazy!(parse_expression())
+//             .then_ignore(par::optional_space())
+//             .then(lazy!(parse_expression())),
+//     ));
+
+//     let else_case = par::maybe_space_then(par::bracket(
+//         par::match_exact("else")
+//             .ignore_then(par::optional_space())
+//             .ignore_then(lazy!(parse_expression())),
+//     ));
+
+//     // let _ = dbg!(par::paren(
+//     //     par::match_exact("cond").ignore_then(par::optional_space()) //         .ignore_then(com::parse_a_until_b(single_case, else_case)),
+//     // )
+//     // .parse(s.into()));
+//     // let _ = dbg!(
+//     //     par::maybe_space_then(com::parse_a_until_b(single_case, else_case))
+//     //         .parse(" [(= n 1) 1]\n    [(= n 0) 1]\n    [else\n      3]".into())
+//     // );
+//     let _ = dbg!(parse_cond().parse(s.into()));
+// }
 #[cfg(test)]
 mod tests {
     use crate::*;
