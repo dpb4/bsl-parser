@@ -121,35 +121,44 @@ impl Keyword {
 }
 
 fn parse_literal<'a>() -> impl Parser<'a, Expression> {
+    // TODO this will mess with error messages
     let possible_literals = par::string_literal()
         .or(par::number_literal())
         .or(par::identifier());
 
     par::maybe_space_then(
         possible_literals
-            .apply(|b| Primitive::try_from_str(b).ok_or("unable to parse primitive"))
+            .apply(|b| {
+                Primitive::try_from_str(b).ok_or(format!("unable to create primitive from `{b}`"))
+            })
             .map(Expression::Literal),
     )
 }
 
 fn parse_token<'a>() -> impl Parser<'a, Expression> {
-    par::identifier().map(|t| Expression::Identifier(String::from(t)))
+    par::identifier().map_with_context(
+        |t| Expression::Identifier(String::from(t)),
+        "at parse_token",
+    )
 }
 
 fn parse_fn_name<'a>() -> impl Parser<'a, FunctionName> {
-    par::identifier().or(par::operator()).map(|s| {
-        if let Some(k) = Keyword::get_keyword(s) {
-            FunctionName::BuiltIn(k)
-        } else {
-            FunctionName::Custom(String::from(s))
-        }
-    })
+    par::identifier().or(par::operator()).map_with_context(
+        |s| {
+            if let Some(k) = Keyword::get_keyword(s) {
+                FunctionName::BuiltIn(k)
+            } else {
+                FunctionName::Custom(String::from(s))
+            }
+        },
+        "at parse_fn_name",
+    )
 }
 
 fn parse_fn_call<'a>() -> impl Parser<'a, Expression> {
     par::maybe_space_then(
         par::paren(parse_fn_name().then(par::space_separated(lazy!(parse_expression()))))
-            .map(Expression::FunctionCall),
+            .map_with_context(Expression::FunctionCall, "at parse_fn_call"),
     )
 }
 
@@ -158,20 +167,29 @@ fn parse_cond<'a>() -> impl Parser<'a, Expression> {
         lazy!(parse_expression())
             .then_ignore(par::optional_space())
             .then(lazy!(parse_expression())),
-    ));
+    ))
+    .map_with_context(|x| x, "at parse_cond/single_case");
 
     let else_case = par::maybe_space_then(par::bracket(
         par::match_exact("else")
             .ignore_then(par::optional_space())
             .ignore_then(lazy!(parse_expression())),
-    ));
+    ))
+    .map_with_context(|x| x, "at parse_cond/else_case");
 
-    par::paren(
-        par::match_exact("cond")
-            .ignore_then(par::optional_space())
-            .ignore_then(com::parse_a_until_b(single_case, else_case)),
+    par::optional_space().ignore_then(
+        par::paren(
+            par::match_exact("cond")
+                .ignore_then(par::optional_space())
+                .ignore_then(com::parse_a_until_b(single_case, else_case)),
+        )
+        .map_with_context(
+            |(cases, else_case)| Expression::Cond((cases, Box::new(else_case))),
+            "at parse_cond",
+        ),
     )
-    .map(|(cases, else_case)| Expression::Cond((cases, Box::new(else_case))))
+    // par::optional_space()
+    //     .ignore_then(com::parse_a_until_b(single_case, else_case))
 }
 
 fn parse_local<'a>() -> impl Parser<'a, Expression> {
@@ -184,18 +202,82 @@ fn parse_local<'a>() -> impl Parser<'a, Expression> {
             .then_ignore(par::optional_space())
             .then(parse_expression()))),
     )
-    .map(|(local_defns, body)| Expression::Local((local_defns, Box::new(body))))
+    .map_with_context(
+        |(local_defns, body)| Expression::Local((local_defns, Box::new(body))),
+        "at parse_local",
+    )
 }
+
+#[inline]
+fn is_terminator(c: char) -> bool {
+    c.is_whitespace() || c == ')' || c == ']' || c == ';'
+}
+
+fn looks_like_primitive(s: &str) -> bool {
+    let firstchar = {
+        let c = s.chars().next();
+        if c.is_some() {
+            let c = c.unwrap();
+            c.is_numeric() || c == '\'' || c == '"' || c == '-'
+        } else {
+            false
+        }
+    };
+
+    firstchar || s.starts_with("empty") && s.chars().nth(5).map_or(true, is_terminator)
+}
+
 fn parse_expression<'a>() -> impl Parser<'a, Expression> {
-    parse_literal()
-        .or(parse_token())
-        .or(parse_cond())
-        .or(parse_fn_call())
+    let paren_parsers = com::join(
+        com::peek(par::match_exact("(").ignore_then(par::identifier().or(par::operator())))
+            .map_with_context(
+                |s| -> BoxedParser<'a, Expression> {
+                    match s {
+                        "cond" => Box::new(parse_cond()),
+                        "local" => Box::new(parse_local()),
+                        _ => Box::new(parse_fn_call()),
+                    }
+                },
+                "at parse_expression/paren_parsers",
+            ),
+    );
+    let empty_parser = par::identifier().pred(|i| *i == "empty").map_with_context(
+        |_| Expression::Literal(Primitive::List(ConsList::Empty)),
+        "at parse_expression/empty_parser",
+    );
+
+    // let primitive_parser = com::peek(|ctx| par::parse_any_char(ctx))
+    //     .pred(|c| c.is_numeric() || c == '\'' || c == '"' || c == '-');
+
+    // I have to split these parsers like this to give specific error messages;
+    // if the function call parser fails, was it a malformed function call or
+    // just not a function call to begin with (ie a number, for example)?
+    let function_call_like = com::peek((|c| par::parse_any_char(c)).pred(|c| *c == '('))
+        .ignore_then(par::unrecoverable(paren_parsers))
+        .map_with_context(|x| x, "at parse_expression/function_call_like");
+
+    let literal_like = com::peek(
+        (|c| par::parse_any_char(c))
+            .pred(|c| *c == '\'' || *c == '"' || *c == '-' || c.is_ascii_digit()),
+    )
+    .ignore_then(par::unrecoverable(parse_literal()))
+    .map_with_context(|x| x, "at parse_expression/literal_like");
+
+    let token_like = par::unrecoverable(empty_parser.or(parse_token()))
+        .map_with_context(|x| x, "at parse_expression/token_like");
+
+    par::optional_space()
+        .ignore_then(function_call_like.or(literal_like).or(token_like))
+        .map_with_context(|x| x, "at parse_expression")
+
+    // parse_literal().or(parse_token()).or(paren_parsers)
+    // .or(parse_cond())
     // .or(parse_local())
+    // .or(parse_fn_call())
 }
 
 fn parse_const_def<'a>() -> impl Parser<'a, TopLevelExpression> {
-    com::map(
+    com::map_with_context(
         par::maybe_space_then(par::paren(com::right(
             par::match_exact("define"),
             par::maybe_space_then(com::pair(
@@ -204,6 +286,7 @@ fn parse_const_def<'a>() -> impl Parser<'a, TopLevelExpression> {
             )),
         ))),
         |(name, value)| TopLevelExpression::ConstantDefinition((name.into(), value)),
+        "at parse_const_def",
     )
 }
 
@@ -231,15 +314,27 @@ fn parse_fn_def<'a>() -> impl Parser<'a, TopLevelExpression> {
 }
 
 pub fn parse_nv_expression<'a>() -> impl Parser<'a, TopLevelExpression> {
-    com::map(parse_expression(), |e| {
-        TopLevelExpression::NonVoidExpression(e)
-    })
+    com::map_with_context(
+        parse_expression(),
+        |e| TopLevelExpression::NonVoidExpression(e),
+        "at parse_nv_expression",
+    )
 }
 
 pub fn parse_top_level_expression<'a>() -> impl Parser<'a, TopLevelExpression> {
+    let define_parsers = par::paren(par::identifier().map(
+        |s| -> BoxedParser<'a, TopLevelExpression> {
+            match s {
+                "define" => todo!(),
+                "define-struct" => todo!(),
+                _ => todo!(),
+            }
+        },
+    ));
     parse_const_def()
         .or(parse_fn_def())
         .or(parse_nv_expression())
+        .map_with_context(|x| x, "at parse_top_level_expression")
 }
 
 pub fn testing() {

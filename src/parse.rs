@@ -13,8 +13,8 @@ impl<'a> From<&'a str> for ParseContext<'a> {
         Self {
             remaining: value,
             current_index: 0,
-            line: 0,
-            col: 0,
+            line: 1,
+            col: 1,
         }
     }
 }
@@ -28,8 +28,19 @@ impl<'a> ParseContext<'a> {
 
     pub fn produce(mut self, n: usize) -> (Self, &'a str) {
         let (new, remaining) = self.remaining.split_at(n);
+
         self.remaining = remaining;
         self.current_index += n;
+        self.col += n;
+
+        // check for newlines to update line/col
+        for c in new.chars() {
+            if c == '\n' {
+                self.line += 1;
+                self.col = 1;
+            }
+        }
+
         (self, new)
     }
 
@@ -50,6 +61,7 @@ impl<'a> std::fmt::Display for ParseContext<'a> {
 pub struct ParseError<'a> {
     ctx: ParseContext<'a>,
     msg: String,
+    recoverable: bool,
 }
 impl<'a> std::fmt::Display for ParseError<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -62,15 +74,25 @@ impl<'a> ParseError<'a> {
         Self {
             ctx,
             msg: msg.into(),
+            recoverable: true,
         }
     }
     pub fn append_msg<S: Into<String>>(self, new_line: S) -> Self {
         Self {
             ctx: self.ctx,
-            msg: self.msg + &new_line.into(),
+            msg: self.msg + "\n" + &new_line.into(),
+            recoverable: self.recoverable,
+        }
+    }
+    pub fn unrecoverable(self) -> Self {
+        Self {
+            ctx: self.ctx,
+            msg: self.msg,
+            recoverable: false,
         }
     }
 }
+
 pub trait Parser<'a, Output> {
     fn parse(&self, ctx: ParseContext<'a>) -> ParseResult<'a, Output>;
 
@@ -183,6 +205,13 @@ where
         self(ctx)
     }
 }
+pub type BoxedParser<'a, Output> = Box<dyn Parser<'a, Output> + 'a>;
+
+impl<'a, Output> Parser<'a, Output> for BoxedParser<'a, Output> {
+    fn parse(&self, ctx: ParseContext<'a>) -> ParseResult<'a, Output> {
+        (**self).parse(ctx)
+    }
+}
 
 pub mod com {
     use crate::parse::{ParseContext, ParseError};
@@ -250,6 +279,19 @@ pub mod com {
                 })
         }
     }
+
+    pub fn join<'a, P, A, I>(parser: P) -> impl Parser<'a, A>
+    where
+        P: Parser<'a, I>,
+        I: Parser<'a, A>,
+    {
+        move |ctx| {
+            parser
+                .parse(ctx)
+                .and_then(|(ctx2, inner)| inner.parse(ctx2))
+        }
+    }
+
     pub fn left<'a, P1, P2, R1, R2>(parser1: P1, parser2: P2) -> impl Parser<'a, R1>
     where
         P1: Parser<'a, R1>,
@@ -273,7 +315,12 @@ pub mod com {
     {
         move |ctx: ParseContext<'a>| match parser1.parse(ctx.clone()) {
             r @ Ok(_) => r,
-            Err(_) => parser2.parse(ctx),
+            Err(ParseError {
+                recoverable: true, ..
+            }) => parser2.parse(ctx),
+            e @ Err(ParseError {
+                recoverable: false, ..
+            }) => e,
         }
     }
 
@@ -299,6 +346,16 @@ pub mod com {
         P: Parser<'a, A>,
     {
         move |s| parser.parse(s)
+    }
+
+    pub fn peek<'a, P, A>(parser: P) -> impl Parser<'a, A>
+    where
+        P: Parser<'a, A>,
+    {
+        move |ctx: ParseContext<'a>| {
+            let c = dbg!(ctx.clone());
+            parser.parse(ctx).map(|(_, result)| (c, result))
+        }
     }
 
     pub fn one_plus<'a, P, A>(parser: P) -> impl Parser<'a, Vec<A>>
@@ -384,7 +441,7 @@ pub mod com {
                             result_vec.push(v);
                             next_ctx = r;
                         }
-                        Err(e) => return Err(e),
+                        Err(e) => return Err(e.append_msg("in parse_a_until_b, 'a' parser failed")),
                     },
                 }
             }
@@ -414,14 +471,16 @@ pub mod par {
                     let s = ctx.remaining[..expected.len()].to_string();
                     Err(ParseError::from_ctx(
                         ctx,
-                        format!("'{s}' does not match exact string {expected}",),
+                        format!("'{s}' does not match exact string '{expected}'",),
                     ))
                 }
             } else {
                 let s = ctx.remaining;
                 Err(ParseError::from_ctx(
                     ctx,
-                    format!("'{s}' does not match exact string {expected}",),
+                    format!(
+                        "'{s}' does not match exact string '{expected}' (string not long enough)",
+                    ),
                 ))
             }
         }
@@ -438,6 +497,13 @@ pub mod par {
 
     pub fn whitespace_char<'a>() -> impl Parser<'a, char> {
         pred(parse_any_char, |c| c.is_whitespace())
+    }
+
+    pub fn unrecoverable<'a, P, A>(parser: P) -> impl Parser<'a, A>
+    where
+        P: Parser<'a, A>,
+    {
+        move |ctx: ParseContext<'a>| parser.parse(ctx).map_err(|e| e.unrecoverable())
     }
 
     pub fn paren<'a, P, A>(parser: P) -> impl Parser<'a, A>
@@ -584,10 +650,7 @@ pub mod par {
                     ));
                 }
             } else {
-                return Err(ParseError::from_ctx(
-                    ctx,
-                    "number literal got empty string".to_string(),
-                ));
+                return Err(ParseError::from_ctx(ctx, "number literal got empty string"));
             }
 
             let mut decimal = false;
@@ -610,7 +673,7 @@ pub mod par {
                 } else {
                     return Err(ParseError::from_ctx(
                         ctx,
-                        format!("found {next} while trying to parse number literal"),
+                        format!("found `{next}` while trying to parse number literal"),
                     ));
                 }
             }
@@ -659,7 +722,7 @@ pub mod par {
                     },
                     _ => Err(ParseError::from_ctx(
                         ctx,
-                        "not a string literal (got empty string)",
+                        "not a string literal (got empty input)",
                     )),
                 }
             },

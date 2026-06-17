@@ -248,6 +248,7 @@ pub fn eval_nv_expression_with_env(
                             // TODO can't short circuit with ? operator if I want good error messages; need better soln
                             primitive::mod_(a?, b?)
                         }
+                        // TODO this isn't unreachable
                         K::Cond | K::Define | K::Local => unreachable!(),
                         K::CheckExpect => todo!(),
                         K::DefineStruct => todo!(),
